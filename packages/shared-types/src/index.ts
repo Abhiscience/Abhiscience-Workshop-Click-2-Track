@@ -1,0 +1,1 @@
+/** Shared TypeScript types for mobile and web apps. */

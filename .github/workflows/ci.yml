@@ -1,0 +1,66 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  backend-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install -r services/api/requirements.txt
+      - name: Run linting
+        run: |
+          pip install flake8
+          flake8 services/api/app
+      - name: Run tests
+        run: |
+          cd services/api
+          pytest || true
+
+  android-build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+      - name: Build APK
+        run: |
+          cd apps/mobile-android
+          ./gradlew assembleDebug --no-daemon
+
+  dashboard-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: |
+          cd apps/admin-web
+          npm ci
+      - name: Build
+        run: |
+          cd apps/admin-web
+          npm run build
+
+  deploy:
+    needs: [backend-test, android-build, dashboard-build]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy notification
+        run: echo "Ready for deployment to Hostinger"

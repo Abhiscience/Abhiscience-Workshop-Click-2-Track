@@ -1,0 +1,11 @@
+id,role_name,capture_label,permissions
+role_001,SECURITY_GUARD,"Captured by Security Guard",{"capture":true,"view_timeline":false}
+role_002,SERVICE_ADVISOR,"Captured by Advisor",{"capture":true,"create_jc":true,"view_timeline":true}
+role_003,TECHNICIAN,"Captured by Technician",{"capture":true,"update_status":true,"view_timeline":true}
+role_004,WASHING_SUPERVISOR,"Captured by Washing",{"capture":true,"view_timeline":true}
+role_005,PARTS_MANAGER,"Captured by Parts",{"capture":true,"issue_parts":true,"view_timeline":true}
+role_006,QUALITY_INSPECTOR,"Captured by QC",{"capture":true,"view_timeline":true}
+role_007,DELIVERY_COORDINATOR,"Captured by Delivery",{"capture":true,"view_timeline":true}
+role_008,WORKSHOP_MANAGER,"Manager Action",{"capture":false,"admin":true,"view_all":true}
+role_009,SYSTEM_ADMIN,"System Admin",{"admin":true,"configure":true}
+role_010,BRANCH_ADMIN,"Branch Admin",{"capture":false,"view_branch":true}

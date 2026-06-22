@@ -1,0 +1,220 @@
+openapi: 3.0.0
+info:
+  title: Workshop Click-2-Track API
+  description: Vehicle movement tracking platform for automobile workshops
+  version: 0.1.0
+
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Development server
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    User:
+      type: object
+      properties:
+        user_id:
+          type: string
+        name:
+          type: string
+        mobile:
+          type: string
+        role_id:
+          type: string
+        branch_id:
+          type: string
+        status:
+          type: string
+
+    Role:
+      type: object
+      properties:
+        role_id:
+          type: string
+        role_name:
+          type: string
+        capture_label:
+          type: string
+        permissions:
+          type: object
+
+    Vehicle:
+      type: object
+      properties:
+        vehicle_id:
+          type: string
+        registration_number:
+          type: string
+        make:
+          type: string
+        model:
+          type: string
+        color:
+          type: string
+        region:
+          type: string
+          enum: [UA, IN]
+
+    JobCard:
+      type: object
+      properties:
+        job_card_id:
+          type: string
+        external_job_card_no:
+          type: string
+        vehicle_id:
+          type: string
+        status:
+          type: string
+        open_time:
+          type: string
+          format: date-time
+        close_time:
+          type: string
+          format: date-time
+
+    CaptureEvent:
+      type: object
+      properties:
+        event_id:
+          type: string
+        job_card_id:
+          type: string
+        stage_id:
+          type: string
+        user_id:
+          type: string
+        image_url:
+          type: string
+        plate_text_raw:
+          type: string
+        plate_text_normalized:
+          type: string
+        plate_confidence:
+          type: number
+        match_status:
+          type: string
+          enum: [EXACT_MATCH, NORMALIZED_MATCH, SHORTLIST_REQUIRED, MANUAL_CONFIRMED, PENDING_NO_JC, UNMATCHED]
+        captured_at_device:
+          type: string
+          format: date-time
+        received_at_server:
+          type: string
+          format: date-time
+
+    LoginRequest:
+      type: object
+      properties:
+        mobile:
+          type: string
+        password:
+          type: string
+
+    Token:
+      type: object
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+
+paths:
+  /auth/login:
+    post:
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Token'
+
+  /auth/me:
+    get:
+      summary: Get current user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+  /captures:
+    post:
+      summary: Create capture event
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                stage_id:
+                  type: string
+                remarks:
+                  type: string
+                image:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Capture event created
+
+  /job-cards/active/search:
+    get:
+      summary: Search active job cards
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: plate
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job cards list
+
+  /job-cards/{job_card_id}/timeline:
+    get:
+      summary: Get vehicle timeline
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Complete timeline
+
+  /analytics/dashboard/live-workshop-status:
+    get:
+      summary: Live workshop status
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Live status data
+
+  /analytics/dashboard/utilization-metrics:
+    get:
+      summary: Utilization metrics
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Metrics data
