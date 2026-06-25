@@ -16,8 +16,14 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 async def authenticate_user(mobile: str, password: str, db: AsyncSession) -> Optional[User]:
-    # Placeholder - will implement full user lookup
-    return None
+    from sqlalchemy import select
+    result = await db.execute(select(User).where(User.mobile == mobile))
+    user = result.scalar_one_or_none()
+    if not user:
+        return None
+    if not verify_password(password, user.password_hash):
+        return None
+    return user
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
