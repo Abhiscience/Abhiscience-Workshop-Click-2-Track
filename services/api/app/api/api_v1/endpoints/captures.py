@@ -9,11 +9,11 @@ from app.core.database import get_db
 from app.models.models import CaptureEvent, MatchStatus, PendingVehicle
 from app.schemas.schemas import CaptureEventCreate, CaptureEvent as CaptureEventSchema
 from app.core.security import decode_token
-from packages.anpr_providers.anpr_providers.base import get_provider, normalize_plate
+from anpr_providers.base import get_provider, normalize_plate
 
 router = APIRouter()
 
-async def get_current_user(token: str = Depends()):
+async def get_current_user():
     user_id = decode_token(token)
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token")

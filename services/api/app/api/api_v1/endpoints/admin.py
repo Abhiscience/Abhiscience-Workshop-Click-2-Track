@@ -6,7 +6,7 @@ from app.core.database import get_db
 
 router = APIRouter()
 
-async def get_admin_user(token: str = Depends()):
+async def get_admin_user():
     user_id = decode_token(token)
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token")

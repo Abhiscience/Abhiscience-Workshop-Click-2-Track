@@ -36,6 +36,6 @@ async def login(
     }
 
 @router.get("/me")
-async def read_users_me(token: str = Depends()):
+async def read_users_me():
     """Get current user info."""
     return {"message": "User info endpoint"}

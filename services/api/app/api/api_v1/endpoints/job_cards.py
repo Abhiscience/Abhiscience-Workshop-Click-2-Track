@@ -5,11 +5,11 @@ from typing import List
 from app.core.database import get_db
 from app.core.security import decode_token
 from app.schemas.schemas import JobCard as JobCardSchema, VehicleTimeline, DeviationResponse
-from packages.workflow_engine.workflow_engine.deviation import DeviationEngine
+from workflow_engine.deviation import DeviationEngine
 
 router = APIRouter()
 
-async def get_current_user(token: str = Depends()):
+async def get_current_user():
     user_id = decode_token(token)
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token")

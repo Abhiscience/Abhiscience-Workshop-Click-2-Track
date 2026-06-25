@@ -8,7 +8,7 @@ from app.schemas.schemas import UtilizationMetrics
 
 router = APIRouter()
 
-async def get_current_user(token: str = Depends()):
+async def get_current_user():
     user_id = decode_token(token)
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token")
