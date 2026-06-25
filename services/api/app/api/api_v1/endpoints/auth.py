@@ -31,8 +31,8 @@ async def login(
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "user": user,
-        "role": user.role
+        "user_id": user.user_id,
+        "role_id": user.role_id
     }
 
 @router.get("/me")
