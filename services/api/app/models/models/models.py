@@ -43,6 +43,7 @@ class WorkflowStage(Base):
     stage_name = Column(String(200), nullable=False)
     sequence_order = Column(Integer, nullable=False)
     capture_mandatory = Column(Boolean, default=False)
+    role_id = Column(Integer, ForeignKey("roles.role_id"), nullable=True)
     
     branch = relationship("Branch", back_populates="workflow_stages")
     role = relationship("Role", back_populates="workflow_stages", uselist=False)
