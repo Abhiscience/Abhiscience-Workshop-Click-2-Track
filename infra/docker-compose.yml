@@ -12,7 +12,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
@@ -43,7 +43,7 @@ services:
   # API Backend
   api:
     build:
-      context: ../../services/api
+      context: ../services/api
       dockerfile: ../../Dockerfile.api
     container_name: workshop-api
     depends_on:
@@ -58,9 +58,9 @@ services:
       MINIO_SECRET_KEY: minioadmin
       DEBUG: "true"
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
-      - ../../services/api:/app
+      - ../services/api:/app
     restart: unless-stopped
 
 volumes:
