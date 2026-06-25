@@ -16,10 +16,10 @@
       "static/chunks/main-app.js",
       "static/chunks/app/analytics/page.js"
     ],
-    "/_not-found/page": [
+    "/api/analytics/utilization/route": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/_not-found/page.js"
+      "static/chunks/app/api/analytics/utilization/route.js"
     ]
   }
 }
