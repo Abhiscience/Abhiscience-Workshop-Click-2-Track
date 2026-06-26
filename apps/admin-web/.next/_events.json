@@ -1,1 +1,1 @@
-[{"eventName":"NEXT_CLI_SESSION_STOPPED","payload":{"nextVersion":"15.0.0","nodeVersion":"v22.23.0","cliCommand":"dev","durationMilliseconds":342,"turboFlag":false,"pagesDir":false,"appDir":true}}]
+[{"eventName":"NEXT_CLI_SESSION_STOPPED","payload":{"nextVersion":"15.0.0","nodeVersion":"v22.23.0","cliCommand":"dev","durationMilliseconds":417,"turboFlag":false,"pagesDir":false,"appDir":true}}]

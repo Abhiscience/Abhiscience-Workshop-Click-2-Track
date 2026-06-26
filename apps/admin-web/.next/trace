@@ -15,3 +15,4 @@
 [{"name":"next-dev","duration":322175,"timestamp":776476841680,"id":1,"tags":{"isTurbopack":false},"startTime":1782457879247,"traceId":"1818d3942cdc4d28"}]
 [{"name":"next-dev","duration":313487,"timestamp":776477661151,"id":1,"tags":{"isTurbopack":false},"startTime":1782457880066,"traceId":"6163c696f112c5c5"}]
 [{"name":"next-dev","duration":336619,"timestamp":776478421756,"id":1,"tags":{"isTurbopack":false},"startTime":1782457880827,"traceId":"5de124eee6551153"}]
+[{"name":"next-dev","duration":411980,"timestamp":776479192757,"id":1,"tags":{"isTurbopack":false},"startTime":1782457881598,"traceId":"cccf780b3b166da7"}]
