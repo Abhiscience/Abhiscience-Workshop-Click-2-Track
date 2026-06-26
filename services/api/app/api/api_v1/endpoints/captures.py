@@ -27,7 +27,7 @@ async def create_capture(
 ):
     """Create a new capture event with optional image."""
     # Generate event ID
-    event_id = f"evt_{str(uuid.uuid4())[:8]}"
+    # event_id is auto-incremented
     
     # Handle image upload
     image_url = None
@@ -41,10 +41,9 @@ async def create_capture(
     
     # Create capture event
     event = CaptureEvent(
-        event_id=event_id,
-        stage_id=stage_id,
+        stage_id=int(stage_id),
         user_id=current_user["user_id"],
-        installation_id="inst_001",  # From header
+        installation_id=1,
         image_url=image_url,
         image_hash=image_hash,
         plate_text_raw=plate_text,
