@@ -67,7 +67,10 @@ async def list_captures(
     db: AsyncSession = Depends(get_db)
 ):
     """List capture events for current user."""
-    return {"events": []}
+    from sqlalchemy.future import select
+    result = await db.execute(select(CaptureEvent).order_by(CaptureEvent.event_id.desc()).limit(50))
+    events = result.scalars().all()
+    return {"events": [{"event_id": e.event_id, "plate_text_raw": e.plate_text_raw, "plate_text_normalized": e.plate_text_normalized, "match_status": e.match_status, "captured_at_device": str(e.captured_at_device), "stage_id": e.stage_id} for e in events]}
 
 @router.post("/{event_id}/confirm-match")
 async def confirm_match(
