@@ -14,7 +14,7 @@ from anpr_providers.base import get_provider, normalize_plate
 router = APIRouter()
 
 async def get_current_user():
-    return {"user_id": 1}
+    return {"user_id": 2}
 
 @router.post("/", response_model=CaptureEventSchema)
 async def create_capture(
