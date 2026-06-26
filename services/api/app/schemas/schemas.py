@@ -24,7 +24,7 @@ class UserCreate(UserBase):
     branch_id: str
 
 class User(UserBase):
-    user_id: str
+    user_id: int
     role_id: str
     branch_id: str
     status: str
@@ -82,7 +82,7 @@ class JobCard(JobCardBase):
 
 # Capture Event schemas
 class CaptureEventBase(BaseModel):
-    stage_id: str
+    stage_id: int
     remarks: Optional[str]
 
 class CaptureEventCreate(CaptureEventBase):
@@ -90,12 +90,12 @@ class CaptureEventCreate(CaptureEventBase):
     confidence: Optional[float]
 
 class CaptureEvent(CaptureEventBase):
-    event_id: str
+    event_id: int
     job_card_id: Optional[str]
     vehicle_id: Optional[str]
     pending_vehicle_ref: Optional[str]
-    user_id: str
-    installation_id: str
+    user_id: int
+    installation_id: int
     image_url: Optional[str]
     plate_text_raw: Optional[str]
     plate_text_normalized: Optional[str]
@@ -123,7 +123,7 @@ class TokenData(BaseModel):
 
 # Analytics schemas
 class TimelineEvent(BaseModel):
-    event_id: str
+    event_id: int
     stage_name: str
     stage_code: str
     user_name: str
