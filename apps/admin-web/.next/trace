@@ -33,3 +33,8 @@
 [{"name":"next-dev","duration":357301,"timestamp":780187206075,"id":1,"tags":{"isTurbopack":false},"startTime":1782461589611,"traceId":"d1acc89ca7bba6dd"}]
 [{"name":"next-dev","duration":325218,"timestamp":780188175557,"id":1,"tags":{"isTurbopack":false},"startTime":1782461590581,"traceId":"8d63f0c510f5c7d1"}]
 [{"name":"next-dev","duration":355691,"timestamp":780188920991,"id":1,"tags":{"isTurbopack":false},"startTime":1782461591326,"traceId":"c1f15a1c1a5f6cbc"}]
+[{"name":"next-dev","duration":319824,"timestamp":780189679731,"id":1,"tags":{"isTurbopack":false},"startTime":1782461592085,"traceId":"9fb2e24423214886"}]
+[{"name":"next-dev","duration":328454,"timestamp":780201104911,"id":1,"tags":{"isTurbopack":false},"startTime":1782461603510,"traceId":"a0e0da272cdec8fe"}]
+[{"name":"next-dev","duration":316089,"timestamp":780201959280,"id":1,"tags":{"isTurbopack":false},"startTime":1782461604365,"traceId":"c4503d4e72c72ef9"}]
+[{"name":"next-dev","duration":308681,"timestamp":780202683049,"id":1,"tags":{"isTurbopack":false},"startTime":1782461605088,"traceId":"37e7950122ef3f3d"}]
+[{"name":"next-dev","duration":309008,"timestamp":780203415154,"id":1,"tags":{"isTurbopack":false},"startTime":1782461605820,"traceId":"49365e1c8532e04d"}]
