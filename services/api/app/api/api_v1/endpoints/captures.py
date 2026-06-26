@@ -29,16 +29,25 @@ async def create_capture(
     # Generate event ID
     # event_id is auto-incremented
     
-    # Handle image upload
+    # Handle image upload and OCR
     image_url = None
     image_hash = None
+    ocr_plate = plate_text
+    ocr_confidence = 0.95
     
     if image:
-        # Upload to object storage (MinIO/S3)
-        # For now, placeholder
-        import uuid as _uuid
+        import uuid as _uuid, hashlib
+        image_bytes = await image.read()
+        image_hash = hashlib.md5(image_bytes).hexdigest()
         image_url = f"/uploads/{_uuid.uuid4()}.jpg"
-        image_hash = "hash_placeholder"
+        try:
+            provider = get_provider("UA")
+            result = provider.recognize(image_bytes)
+            if result.plate_text and result.plate_text != "UNKNOWN":
+                ocr_plate = result.plate_text
+                ocr_confidence = result.confidence
+        except Exception as e:
+            print(f"OCR error: {e}")
     
     # Create capture event
     event = CaptureEvent(
@@ -47,9 +56,9 @@ async def create_capture(
         installation_id=1,
         image_url=image_url,
         image_hash=image_hash,
-        plate_text_raw=plate_text,
-        plate_text_normalized=normalize_plate(plate_text) if plate_text else None,
-        plate_confidence=0.95,
+        plate_text_raw=ocr_plate,
+        plate_text_normalized=normalize_plate(ocr_plate) if ocr_plate else None,
+        plate_confidence=ocr_confidence,
         match_status=MatchStatus.PENDING_NO_JC,
         captured_at_device=datetime.utcnow(),
         remarks=remarks
