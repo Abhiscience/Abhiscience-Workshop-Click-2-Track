@@ -1,3 +1,5 @@
 {
-  "/staff/page": "app/staff/page.js"
+  "/api/auth/login/route": "app/api/auth/login/route.js",
+  "/staff/page": "app/staff/page.js",
+  "/staff/capture/page": "app/staff/capture/page.js"
 }
