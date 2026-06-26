@@ -80,9 +80,8 @@ def normalize_plate(plate_text: str, region: str = "UA") -> str:
 
 def get_provider(region: str = "UA") -> PlateRecognitionProvider:
     """Factory to get configured ANPR provider."""
-    if region == "UA":
-        return MockPlateRecognitionProvider("UA")
-    elif region == "IN":
-        return MockPlateRecognitionProvider("IN")
-    else:
-        return MockPlateRecognitionProvider("UA")
+    try:
+        from anpr_providers.easyocr_provider import EasyOCRProvider
+        return EasyOCRProvider(region)
+    except Exception:
+        return MockPlateRecognitionProvider(region)
