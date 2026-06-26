@@ -30,6 +30,11 @@
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/staff/page.js"
+    ],
+    "/api/live-workshop-status/route": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/api/live-workshop-status/route.js"
     ]
   }
 }

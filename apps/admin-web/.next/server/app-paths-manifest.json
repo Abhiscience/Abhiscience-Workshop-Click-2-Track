@@ -1,5 +1,6 @@
 {
-  "/analytics/page": "app/analytics/page.js",
+  "/api/live-workshop-status/route": "app/api/live-workshop-status/route.js",
   "/staff/page": "app/staff/page.js",
+  "/analytics/page": "app/analytics/page.js",
   "/live-tracking/page": "app/live-tracking/page.js"
 }
