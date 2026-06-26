@@ -36,7 +36,8 @@ async def create_capture(
     if image:
         # Upload to object storage (MinIO/S3)
         # For now, placeholder
-        image_url = f"/uploads/{event_id}.jpg"
+        import uuid as _uuid
+        image_url = f"/uploads/{_uuid.uuid4()}.jpg"
         image_hash = "hash_placeholder"
     
     # Create capture event
