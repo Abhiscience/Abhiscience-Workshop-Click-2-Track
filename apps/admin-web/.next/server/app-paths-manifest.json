@@ -1,5 +1,6 @@
 {
-  "/login/page": "app/login/page.js",
+  "/api/captures/route": "app/api/captures/route.js",
   "/analytics/page": "app/analytics/page.js",
+  "/login/page": "app/login/page.js",
   "/capture/page": "app/capture/page.js"
 }
