@@ -1,4 +1,4 @@
 {
-  "/api/analytics/utilization/route": "app/api/analytics/utilization/route.js",
-  "/analytics/page": "app/analytics/page.js"
+  "/analytics/page": "app/analytics/page.js",
+  "/live-tracking/page": "app/live-tracking/page.js"
 }
