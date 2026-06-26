@@ -9,7 +9,7 @@ export async function POST(request: Request) {
   
   const response = await fetch(
     `http://76.13.223.20:8001/api/v1/captures/?stage_id=${stage_id}`,
-    { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd }
+    { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd, signal: AbortSignal.timeout(60000) }
   );
   const data = await response.json();
   return Response.json(data);
