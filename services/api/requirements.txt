@@ -15,3 +15,4 @@ pydantic-settings>=2.0.0
 passlib[bcrypt]>=1.7.0
 pandas
 bcrypt==4.0.1
+easyocr
