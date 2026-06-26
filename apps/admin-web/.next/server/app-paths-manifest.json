@@ -1,8 +1,8 @@
 {
-  "/api/captures/route": "app/api/captures/route.js",
   "/analytics/page": "app/analytics/page.js",
   "/staff/capture/page": "app/staff/capture/page.js",
+  "/page": "app/page.js",
   "/staff/page": "app/staff/page.js",
-  "/login/page": "app/login/page.js",
-  "/capture/page": "app/capture/page.js"
+  "/capture/page": "app/capture/page.js",
+  "/login/page": "app/login/page.js"
 }
