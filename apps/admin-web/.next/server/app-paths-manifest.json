@@ -1,7 +1,7 @@
 {
-  "/api/analytics/utilization/route": "app/api/analytics/utilization/route.js",
+  "/_not-found/page": "app/_not-found/page.js",
   "/analytics/page": "app/analytics/page.js",
   "/live-tracking/page": "app/live-tracking/page.js",
-  "/capture/page": "app/capture/page.js",
-  "/login/page": "app/login/page.js"
+  "/login/page": "app/login/page.js",
+  "/capture/page": "app/capture/page.js"
 }
