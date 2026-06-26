@@ -1,6 +1,4 @@
 {
-  "/api/auth/login/route": "app/api/auth/login/route.js",
-  "/api/analytics/utilization/route": "app/api/analytics/utilization/route.js",
   "/login/page": "app/login/page.js",
   "/analytics/page": "app/analytics/page.js"
 }
