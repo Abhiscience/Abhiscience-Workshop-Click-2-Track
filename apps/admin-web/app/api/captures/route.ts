@@ -8,7 +8,7 @@ export async function POST(request: Request) {
   if (image) fd.append('image', image as Blob);
   
   const response = await fetch(
-    `http://localhost:8001/api/v1/captures/?stage_id=${stage_id}`,
+    `http://76.13.223.20:8001/api/v1/captures/?stage_id=${stage_id}`,
     { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd }
   );
   const data = await response.json();
