@@ -12,6 +12,7 @@ export default function StaffCapturePage() {
   const [designationLabel, setDesignationLabel] = useState("");
   const [designationIcon, setDesignationIcon] = useState("");
   const [captures, setCaptures] = useState<any[]>([]);
+  const [manualPlate, setManualPlate] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
@@ -48,6 +49,7 @@ export default function StaffCapturePage() {
       fd.append("image", image);
       fd.append("token", token || "");
       fd.append("stage_id", "1");
+      if (manualPlate) fd.append("manual_plate", manualPlate);
       const res = await fetch("/api/captures", { method: "POST", body: fd });
       const data = await res.json();
       if (data.event_id) {
@@ -119,14 +121,26 @@ export default function StaffCapturePage() {
         <input ref={fileRef} type="file" accept="image/*" capture="environment"
           onChange={handleImageChange} style={{ display: "none" }} />
 
+        {/* Manual Plate Input */}
+        <div style={{ marginBottom: "16px" }}>
+          <p style={{ color: "#94a3b8", fontSize: "12px", marginBottom: "6px", letterSpacing: "1px" }}>OR ENTER PLATE MANUALLY</p>
+          <input
+            type="text"
+            value={manualPlate}
+            onChange={e => setManualPlate(e.target.value.toUpperCase())}
+            placeholder="e.g. A 12345 DUBAI"
+            style={{ width: "100%", padding: "12px", background: "#0f172a", border: "1px solid #334155", borderRadius: "8px", color: "white", fontSize: "18px", letterSpacing: "3px", textAlign: "center", boxSizing: "border-box" }}
+          />
+        </div>
+
         {error && (
           <div style={{ background: "#7f1d1d", borderRadius: "8px", padding: "12px", marginBottom: "12px" }}>
             <p style={{ color: "#fca5a5", fontSize: "14px", margin: 0 }}>{error}</p>
           </div>
         )}
 
-        <button onClick={handleCapture} disabled={!image || loading}
-          style={{ width: "100%", padding: "16px", background: image && !loading ? "#2563eb" : "#1e293b", color: image ? "white" : "#475569", border: "none", borderRadius: "12px", fontSize: "16px", fontWeight: "700", cursor: image ? "pointer" : "not-allowed", marginBottom: "24px", letterSpacing: "0.5px" }}>
+        <button onClick={handleCapture} disabled={(!image && !manualPlate) || loading}
+          style={{ width: "100%", padding: "16px", background: (image || manualPlate) && !loading ? "#2563eb" : "#1e293b", color: (image || manualPlate) ? "white" : "#475569", border: "none", borderRadius: "12px", fontSize: "16px", fontWeight: "700", cursor: image ? "pointer" : "not-allowed", marginBottom: "24px", letterSpacing: "0.5px" }}>
           {loading ? "⏳ Reading plate..." : "🔍 Detect Plate"}
         </button>
 
