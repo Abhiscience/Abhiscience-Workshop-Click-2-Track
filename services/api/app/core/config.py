@@ -38,7 +38,5 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     ENVIRONMENT: str = "development"
     
-    class Config:
-        env_file = ".env"
 
 settings = Settings()
