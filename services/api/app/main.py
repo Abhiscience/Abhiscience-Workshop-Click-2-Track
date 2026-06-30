@@ -1,6 +1,7 @@
 """Main FastAPI application entry point."""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.api.api_v1.api import api_router
 
@@ -18,6 +19,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Static files for testing
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.include_router(api_router, prefix="/api/v1")
 

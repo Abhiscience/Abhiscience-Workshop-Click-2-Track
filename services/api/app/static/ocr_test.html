@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>License Plate OCR Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; }
+        h1 { color: #333; }
+        input, button { font-size: 16px; margin: 10px 0; }
+        button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        button:disabled { background: #ccc; }
+        #result { background: #f4f4f4; padding: 15px; border-radius: 5px; margin-top: 20px; white-space: pre-wrap; }
+        img { max-width: 100%; margin-top: 20px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>📸 License Plate OCR Test</h1>
+    <p>Take a photo or upload an image of a license plate.</p>
+    <form id="ocrForm">
+        <input type="file" id="fileInput" name="file" accept="image/*" capture="environment" required>
+        <br>
+        <img id="preview" style="display:none;">
+        <br>
+        <button type="submit" id="submitBtn">Check Plate</button>
+    </form>
+    <div id="result"></div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const preview = document.getElementById('preview');
+        const form = document.getElementById('ocrForm');
+        const result = document.getElementById('result');
+        const submitBtn = document.getElementById('submitBtn');
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                preview.style.display = 'block';
+                preview.src = URL.createObjectURL(file);
+            }
+        });
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Processing...';
+            result.textContent = '';
+
+            const formData = new FormData(form);
+            try {
+                const response = await fetch('/api/v1/admin/plate-ocr', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    result.textContent = 'Error: ' + JSON.stringify(data, null, 2);
+                } else {
+                    result.textContent = 'Detected Plate:
+' + JSON.stringify(data, null, 2);
+                }
+            } catch (err) {
+                result.textContent = 'Network error: ' + err.message;
+            }
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Check Plate';
+        });
+    </script>
+</body>
+</html>
