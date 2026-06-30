@@ -1,7 +1,14 @@
 {
+  "/api/analytics/utilization/route": "app/api/analytics/utilization/route.js",
+  "/api/auth/login/route": "app/api/auth/login/route.js",
+  "/api/captures/route": "app/api/captures/route.js",
+  "/api/live-workshop-status/route": "app/api/live-workshop-status/route.js",
   "/_not-found/page": "app/_not-found/page.js",
-  "/analytics/page": "app/analytics/page.js",
+  "/capture/page": "app/capture/page.js",
+  "/page": "app/page.js",
   "/live-tracking/page": "app/live-tracking/page.js",
   "/login/page": "app/login/page.js",
-  "/capture/page": "app/capture/page.js"
+  "/staff/capture/page": "app/staff/capture/page.js",
+  "/staff/page": "app/staff/page.js",
+  "/analytics/page": "app/analytics/page.js"
 }
