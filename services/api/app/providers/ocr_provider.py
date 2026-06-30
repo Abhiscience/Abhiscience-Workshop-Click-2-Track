@@ -80,6 +80,6 @@ _ocr_provider: Optional[OCRSpaceProvider] = None
 def get_ocr_provider() -> OCRSpaceProvider:
     global _ocr_provider
     if _ocr_provider is None:
-        from core.config import settings
+        from app.core.config import settings
         _ocr_provider = OCRSpaceProvider(api_key=settings.OCR_SPACE_API_KEY)
     return _ocr_provider
