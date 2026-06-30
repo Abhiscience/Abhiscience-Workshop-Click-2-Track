@@ -1,7 +1,7 @@
 """Admin management endpoints."""
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 import re
-from providers.ocr_provider import get_ocr_provider
+from app.providers.ocr_provider import get_ocr_provider
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import decode_token
 from app.core.database import get_db
