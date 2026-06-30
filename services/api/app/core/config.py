@@ -1,8 +1,9 @@
 """Core configuration."""
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(extra="ignore", env_file=".env")
     PROJECT_NAME: str = "Workshop Click-2-Track"
     VERSION: str = "0.1.0"
     

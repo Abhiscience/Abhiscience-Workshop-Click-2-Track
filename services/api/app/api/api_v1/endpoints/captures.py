@@ -9,7 +9,8 @@ from app.core.database import get_db
 from app.models.models import CaptureEvent, MatchStatus, PendingVehicle
 from app.schemas.schemas import CaptureEventCreate, CaptureEvent as CaptureEventSchema
 from app.core.security import decode_token
-from anpr_providers.base import get_provider, normalize_plate
+from providers.ocr_provider import get_ocr_provider
+from providers.anpr_provider import normalize_plate
 
 router = APIRouter()
 
@@ -41,11 +42,11 @@ async def create_capture(
         image_hash = hashlib.md5(image_bytes).hexdigest()
         image_url = f"/uploads/{_uuid.uuid4()}.jpg"
         try:
-            provider = get_provider("UA")
-            result = provider.recognize(image_bytes)
-            if result.plate_text and result.plate_text != "UNKNOWN":
-                ocr_plate = result.plate_text
-                ocr_confidence = result.confidence
+            provider = get_ocr_provider()
+            result = await provider.recognize_plate(image_bytes, image.filename or "capture.jpg")
+            if result.get("success") and result.get("plate_text_raw"):
+                ocr_plate = result["plate_text_raw"]
+                ocr_confidence = result["confidence"]
         except Exception as e:
             print(f"OCR error: {e}")
     
