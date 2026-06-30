@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     DMS_API_URL: Optional[str] = None
     DMS_API_KEY: Optional[str] = None
     
+    # External OCR provider
+    OCR_SPACE_API_KEY: Optional[str] = None
+
     # Environment
     DEBUG: bool = True
     ENVIRONMENT: str = "development"
