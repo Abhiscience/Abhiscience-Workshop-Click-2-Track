@@ -186,3 +186,9 @@ def set_anpr_provider(provider: ANPRProvider):
 async def recognize_plate(image_url: str) -> Dict[str, Any]:
     """Singleton access to ANPR recognition"""
     return await _current_provider.recognize_plate(image_url)
+
+def normalize_plate(plate: str) -> str:
+    """Normalize plate text for matching."""
+    if not plate:
+        return ""
+    return plate.upper().replace("-", "").replace(" ", "")
