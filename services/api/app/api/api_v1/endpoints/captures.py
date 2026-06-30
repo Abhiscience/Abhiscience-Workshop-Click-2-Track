@@ -9,8 +9,8 @@ from app.core.database import get_db
 from app.models.models import CaptureEvent, MatchStatus, PendingVehicle
 from app.schemas.schemas import CaptureEventCreate, CaptureEvent as CaptureEventSchema
 from app.core.security import decode_token
-from providers.ocr_provider import get_ocr_provider
-from providers.anpr_provider import normalize_plate
+from app.providers.ocr_provider import get_ocr_provider
+from app.providers.anpr_provider import normalize_plate
 
 router = APIRouter()
 
