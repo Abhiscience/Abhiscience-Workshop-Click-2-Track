@@ -112,9 +112,9 @@ async def create_workflow_stage(
     db: AsyncSession = Depends(get_db)
 ):
     """Create a new workflow stage."""
-    stage_id = stage_data.get("stage_id") or str(uuid.uuid4())
+    # Auto-increment integer ID
     stage = WorkflowStage(
-        stage_id=stage_id,
+        # stage_id auto-generated,
         branch_id=stage_data.get("branch_id"),
         stage_code=stage_data.get("stage_code"),
         stage_name=stage_data.get("stage_name"),
@@ -164,7 +164,7 @@ async def list_users(
                 "role_id": u.role_id,
                 "branch_id": u.branch_id,
                 "status": u.status,
-                "created_at": u.created_at.isoformat() if u.created_at else None,
+                
             }
             for u in users
         ]
@@ -188,9 +188,9 @@ async def create_user(
     if existing.scalars().first():
         raise HTTPException(status_code=400, detail="User with this mobile already exists")
 
-    user_id = user_data.get("user_id") or str(uuid.uuid4())
+    # Auto-increment integer ID
     user = User(
-        user_id=user_id,
+        # user_id auto-generated,
         name=user_data["name"],
         mobile=user_data["mobile"],
         role_id=user_data["role_id"],
@@ -215,7 +215,7 @@ async def create_user(
             "role_id": user.role_id,
             "branch_id": user.branch_id,
             "status": user.status,
-            "created_at": user.created_at.isoformat() if user.created_at else None,
+            
         }
     }
 
