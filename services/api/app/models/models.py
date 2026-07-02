@@ -147,6 +147,5 @@ class AppInstallation(Base):
     app_version = Column(String)
     push_token = Column(String, nullable=True)
     status = Column(String, default="ACTIVE")
-    password_hash = Column(String, nullable=True)
     
     user = relationship("User", back_populates="installations")
