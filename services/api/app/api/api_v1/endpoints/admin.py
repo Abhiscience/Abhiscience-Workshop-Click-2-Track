@@ -4,7 +4,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 import re
-import uuid
 from datetime import datetime
 
 from app.providers.ocr_provider import get_ocr_provider
@@ -30,13 +29,11 @@ async def get_branch_overview(
 
     branch_data = []
     for branch in branches:
-        # Count users in branch
         user_count_result = await db.execute(
             select(func.count(User.user_id)).where(User.branch_id == branch.branch_id)
         )
         user_count = user_count_result.scalar() or 0
 
-        # Count active job cards in branch
         job_count_result = await db.execute(
             select(func.count(JobCard.job_card_id)).where(
                 JobCard.branch_id == branch.branch_id,
@@ -45,7 +42,6 @@ async def get_branch_overview(
         )
         active_job_count = job_count_result.scalar() or 0
 
-        # Count capture events today
         today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         capture_count_result = await db.execute(
             select(func.count(CaptureEvent.event_id))
@@ -72,13 +68,13 @@ async def get_branch_overview(
     return {
         "branches": branch_data,
         "total_vehicles": total_vehicles,
-        "utilization_rate": 0  # Can be computed later based on capacity
+        "utilization_rate": 0
     }
 
 
 @router.get("/workflow-stages")
 async def get_workflow_stages(
-    branch_id: str = None,
+    branch_id: int = None,
     admin: dict = Depends(get_admin_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -112,14 +108,13 @@ async def create_workflow_stage(
     db: AsyncSession = Depends(get_db)
 ):
     """Create a new workflow stage."""
-    # Auto-increment integer ID
     stage = WorkflowStage(
-        # stage_id auto-generated,
         branch_id=stage_data.get("branch_id"),
         stage_code=stage_data.get("stage_code"),
         stage_name=stage_data.get("stage_name"),
         sequence_order=stage_data.get("sequence_order"),
         capture_mandatory=stage_data.get("capture_mandatory", True),
+        role_id=stage_data.get("role_id"),
     )
     db.add(stage)
     try:
@@ -127,7 +122,7 @@ async def create_workflow_stage(
         await db.refresh(stage)
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=400, detail="Stage with this ID already exists")
+        raise HTTPException(status_code=400, detail="Stage could not be created")
 
     return {
         "status": "created",
@@ -144,7 +139,7 @@ async def create_workflow_stage(
 
 @router.get("/users")
 async def list_users(
-    branch_id: str = None,
+    branch_id: int = None,
     admin: dict = Depends(get_admin_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -164,7 +159,6 @@ async def list_users(
                 "role_id": u.role_id,
                 "branch_id": u.branch_id,
                 "status": u.status,
-                
             }
             for u in users
         ]
@@ -183,14 +177,11 @@ async def create_user(
     if missing:
         raise HTTPException(status_code=400, detail=f"Missing fields: {', '.join(missing)}")
 
-    # Check for duplicate mobile
     existing = await db.execute(select(User).where(User.mobile == user_data["mobile"]))
     if existing.scalars().first():
         raise HTTPException(status_code=400, detail="User with this mobile already exists")
 
-    # Auto-increment integer ID
     user = User(
-        # user_id auto-generated,
         name=user_data["name"],
         mobile=user_data["mobile"],
         role_id=user_data["role_id"],
@@ -204,7 +195,7 @@ async def create_user(
         await db.refresh(user)
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=400, detail="User with this ID or mobile already exists")
+        raise HTTPException(status_code=400, detail="User could not be created")
 
     return {
         "status": "created",
@@ -215,7 +206,6 @@ async def create_user(
             "role_id": user.role_id,
             "branch_id": user.branch_id,
             "status": user.status,
-            
         }
     }
 
@@ -248,7 +238,7 @@ async def get_audit_trail(
                 "captured_at_device": e.captured_at_device.isoformat() if e.captured_at_device else None,
                 "received_at_server": e.received_at_server.isoformat() if e.received_at_server else None,
                 "plate_text_raw": e.plate_text_raw,
-                "match_status": e.match_status.value if e.match_status else None,
+                "match_status": e.match_status.value if hasattr(e.match_status, 'value') else e.match_status,
                 "image_url": e.image_url,
                 "remarks": e.remarks,
             }
