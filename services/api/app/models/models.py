@@ -29,6 +29,7 @@ class User(Base):
     role_id = Column(String, ForeignKey("roles.role_id"))
     branch_id = Column(String, ForeignKey("branches.branch_id"))
     status = Column(String, default="ACTIVE")
+    password_hash = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     
     role = relationship("Role", back_populates="users")
@@ -146,5 +147,6 @@ class AppInstallation(Base):
     app_version = Column(String)
     push_token = Column(String, nullable=True)
     status = Column(String, default="ACTIVE")
+    password_hash = Column(String, nullable=True)
     
     user = relationship("User", back_populates="installations")
