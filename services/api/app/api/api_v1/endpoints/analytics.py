@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.orm import joinedload
-from typing import List
+from typing import List, Any
 from datetime import datetime, date, timedelta
 from collections import defaultdict
 from app.core.database import get_db
@@ -178,10 +178,14 @@ async def get_utilization_metrics(
     event_result = await db.execute(event_stmt)
     events = event_result.all()
 
-    # Group events by job_card / vehicle
+    # Group events by work item: prefer job_card, then vehicle, then pending ref,
+    # then plate_text_normalized, only falling back to "unknown" as last resort.
+    def _group_key(event) -> Any:
+        return event.job_card_id or event.vehicle_id or event.pending_vehicle_ref or event.plate_text_normalized or "unknown"
+
     vehicle_events = defaultdict(list)
     for event, stage in events:
-        key = event.job_card_id or event.vehicle_id or event.pending_vehicle_ref or "unknown"
+        key = _group_key(event)
         vehicle_events[key].append((event, stage))
 
     gate_to_advisor_times = []
@@ -368,10 +372,13 @@ async def get_deviation_summary(
     event_result = await db.execute(event_stmt)
     events = event_result.scalars().all()
 
-    # Group by job card / vehicle
+    # Group by work item: prefer job_card, then vehicle, then pending ref, then plate.
+    def _group_key(event) -> Any:
+        return event.job_card_id or event.vehicle_id or event.pending_vehicle_ref or event.plate_text_normalized or "unknown"
+
     vehicle_events = defaultdict(list)
     for event in events:
-        key = event.job_card_id or event.vehicle_id or event.pending_vehicle_ref or "unknown"
+        key = _group_key(event)
         vehicle_events[key].append(event)
 
     total_deviations = 0

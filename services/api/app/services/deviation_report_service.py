@@ -143,10 +143,14 @@ async def build_morning_meeting_report(
 
     events = await _load_capture_events(db, target_date, set(stages.keys()))
 
-    # Group events by work item: prefer job_card, then vehicle, then pending ref.
+    # Group events by work item: prefer job_card, then vehicle, then pending ref,
+    # then plate_text_normalized, only falling back to "unknown" as last resort.
+    def _group_key(ev: CaptureEvent) -> Any:
+        return ev.job_card_id or ev.vehicle_id or ev.pending_vehicle_ref or ev.plate_text_normalized or "unknown"
+
     grouped: Dict[Any, List[CaptureEvent]] = defaultdict(list)
     for ev in events:
-        key = ev.job_card_id or ev.vehicle_id or ev.pending_vehicle_ref or "unknown"
+        key = _group_key(ev)
         grouped[key].append(ev)
 
     deviations: List[Dict[str, Any]] = []
