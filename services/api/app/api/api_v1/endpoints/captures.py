@@ -18,7 +18,7 @@ async def get_current_user(request: Request) -> dict:
     """Extract and verify JWT token from header."""
     auth = request.headers.get("Authorization")
     token = None
-    if auth and auth.startswith(" ***"):
+    if auth and auth.startswith("Bearer "):
         token = auth[7:]
     if not token:
         token = request.headers.get("X-Access-Token")

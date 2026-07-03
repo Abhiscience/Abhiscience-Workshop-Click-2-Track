@@ -24,7 +24,7 @@ async def login(
         )
     
     access_token = create_access_token(
-        data={"sub": user.user_id},
+        data={"sub": str(user.user_id)},
         expires_delta=timedelta(minutes=1440)  # 24 hours
     )
     
