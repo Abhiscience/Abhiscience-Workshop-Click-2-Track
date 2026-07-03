@@ -9,7 +9,7 @@ from datetime import datetime
 from app.providers.ocr_provider import get_ocr_provider
 from app.core.security import decode_token, get_password_hash
 from app.core.database import get_db
-from app.models.models import User, WorkflowStage, Branch, CaptureEvent, JobCard, Vehicle, Role, JobCategory
+from app.models.models import Branch, CaptureEvent, JobCard, JobCategory, Role, User, Vehicle, WorkflowStage
 
 router = APIRouter()
 

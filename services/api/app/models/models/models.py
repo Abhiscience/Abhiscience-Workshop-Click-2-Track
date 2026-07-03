@@ -141,7 +141,6 @@ class CaptureEvent(Base):
     geo_lng = Column(Float, nullable=True)
     remarks = Column(Text, nullable=True)
     work_done_category_id = Column(Integer, ForeignKey("job_categories.job_category_id"), nullable=True)
-
     job_card = relationship("JobCard", back_populates="capture_events")
     work_done_category = relationship("JobCategory", back_populates="captures")
     vehicle = relationship("Vehicle", back_populates="capture_events")
@@ -154,13 +153,14 @@ class CaptureEvent(Base):
 class JobCategory(Base):
     __tablename__ = "job_categories"
 
-    job_category_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    job_category_id = Column(Integer, primary_key=True, autoincrement=True)
     branch_id = Column(Integer, ForeignKey("branches.branch_id"), nullable=True)
     category_name = Column(String(200), nullable=False)
     category_code = Column(String(50), nullable=True)
     is_active = Column(Boolean, default=True)
 
     captures = relationship("CaptureEvent", back_populates="work_done_category")
+
 
 
 class PendingVehicle(Base):
