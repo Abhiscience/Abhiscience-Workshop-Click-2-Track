@@ -50,8 +50,9 @@ async def create_capture(
     if not stage:
         raise HTTPException(status_code=400, detail="Invalid stage_id")
 
-    # Work-Finished stage (sequence_order == 6) requires both image and work-done category
-    if stage.sequence_order == 6:
+    # Work-Finished stage requires both a photo and a work-done category selection
+    is_work_finished = (stage.sequence_order == 6) or (stage.stage_code == "WORK_FINISHED")
+    if is_work_finished:
         if not image or getattr(image, 'filename', '') == '':
             raise HTTPException(status_code=400, detail="Work-Finished capture requires a photo")
         if not work_done_category_id:

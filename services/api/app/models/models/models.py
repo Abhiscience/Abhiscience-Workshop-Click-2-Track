@@ -141,14 +141,13 @@ class CaptureEvent(Base):
     geo_lng = Column(Float, nullable=True)
     remarks = Column(Text, nullable=True)
     work_done_category_id = Column(Integer, ForeignKey("job_categories.job_category_id"), nullable=True)
-    
     job_card = relationship("JobCard", back_populates="capture_events")
+    work_done_category = relationship("JobCategory", back_populates="captures")
     vehicle = relationship("Vehicle", back_populates="capture_events")
     pending_vehicle = relationship("PendingVehicle", back_populates="capture_event")
     stage = relationship("WorkflowStage", back_populates="capture_events")
     user = relationship("User", back_populates="capture_events")
     installation = relationship("AppInstallation", back_populates="capture_events")
-    work_done_category = relationship("JobCategory", back_populates="captures")
 
 
 class JobCategory(Base):
@@ -161,6 +160,7 @@ class JobCategory(Base):
     is_active = Column(Boolean, default=True)
 
     captures = relationship("CaptureEvent", back_populates="work_done_category")
+
 
 
 class PendingVehicle(Base):

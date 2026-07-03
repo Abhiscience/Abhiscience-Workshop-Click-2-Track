@@ -10,7 +10,7 @@ from datetime import datetime
 from app.providers.ocr_provider import get_ocr_provider
 from app.core.security import decode_token, get_password_hash
 from app.core.database import get_db
-from app.models.models import User, WorkflowStage, Branch, CaptureEvent, JobCard, Vehicle, Role, JobCategory
+from app.models.models import Branch, CaptureEvent, JobCard, JobCategory, Role, User, Vehicle, WorkflowStage
 
 router = APIRouter()
 
@@ -80,7 +80,13 @@ async def get_workflow_stages(
     db: AsyncSession = Depends(get_db)
 ):
     """Get workflow stage configuration."""
+<<<<<<< HEAD
     stmt = select(WorkflowStage).options(joinedload(WorkflowStage.role))
+=======
+    from sqlalchemy.orm import selectinload
+
+    stmt = select(WorkflowStage).options(selectinload(WorkflowStage.role))
+>>>>>>> origin/main
     if branch_id:
         stmt = stmt.where(WorkflowStage.branch_id == branch_id)
     stmt = stmt.order_by(WorkflowStage.sequence_order)
@@ -97,7 +103,7 @@ async def get_workflow_stages(
                 "sequence_order": s.sequence_order,
                 "capture_mandatory": s.capture_mandatory,
                 "role_id": s.role_id,
-                "role_name": getattr(s.role, "role_name", None) if s.role_id else None,
+                "role_name": s.role.role_name if s.role else None,
             }
             for s in stages
         ]
@@ -127,6 +133,11 @@ async def create_workflow_stage(
         await db.rollback()
         raise HTTPException(status_code=400, detail="Stage could not be created")
 
+    # optionally resolve role
+    role = None
+    if stage.role_id:
+        role = await db.get(Role, stage.role_id)
+
     return {
         "status": "created",
         "stage": {
@@ -136,6 +147,8 @@ async def create_workflow_stage(
             "stage_name": stage.stage_name,
             "sequence_order": stage.sequence_order,
             "capture_mandatory": stage.capture_mandatory,
+            "role_id": stage.role_id,
+            "role_name": role.role_name if role else None,
         }
     }
 
@@ -274,6 +287,8 @@ async def plate_ocr(file: UploadFile = File(...)):
     if not result.get("success") or not result.get("plate_text_raw"):
         raise HTTPException(status_code=422, detail=result.get("error", "No license plate detected"))
     return _parse_plate(result["plate_text_raw"])
+
+
 
 @router.get("/roles")
 async def list_roles(
