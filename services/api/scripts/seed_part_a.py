@@ -55,15 +55,27 @@ async def seed():
             await db.commit()
             print(f"Created branch {BRANCH_ID}")
 
-        # Upsert roles using fixed role_ids
+        # Idempotent upsert roles: check by name first, reuse existing id if found
         role_by_name = {}
         for r in ROLES:
-            role = Role(**r)
+            existing = await db.execute(
+                select(Role).where(Role.role_name == r["role_name"])
+            )
+            found = existing.scalar_one_or_none()
+            if found:
+                role_by_name[r["role_name"]] = found.role_id
+                print(f"Role {r['role_name']} already exists -> id {found.role_id}")
+                continue
+            role = Role(
+                role_name=r["role_name"],
+                capture_label=r["capture_label"],
+                permissions=r["permissions"],
+            )
             db.add(role)
             await db.commit()
             await db.refresh(role)
             role_by_name[r["role_name"]] = role.role_id
-            print(f"Ensured role {r['role_name']} -> id {role.role_id}")
+            print(f"Created role {r['role_name']} -> id {role.role_id}")
 
         # Idempotent upsert stages
         for stage_code, stage_name, seq, role_name in STAGES:
