@@ -60,6 +60,7 @@ class Branch(Base):
     
     users = relationship("User", back_populates="branch")
     workflow_stages = relationship("WorkflowStage", back_populates="branch")
+    job_cards = relationship("JobCard", back_populates="branch")
 
 class WorkflowStage(Base):
     __tablename__ = "workflow_stages"
