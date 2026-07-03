@@ -95,6 +95,8 @@ async def get_workflow_stages(
                 "stage_name": s.stage_name,
                 "sequence_order": s.sequence_order,
                 "capture_mandatory": s.capture_mandatory,
+                "role_id": s.role_id,
+                "role_name": getattr(s.role, "role_name", None) if s.role_id else None,
             }
             for s in stages
         ]
