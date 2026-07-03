@@ -223,6 +223,20 @@ class OverrideRequestResponse(BaseModel):
     class Config:
         from_attributes = True
 
+    @classmethod
+    def from_orm(cls, obj):
+        if hasattr(obj, "requester") and obj.requester is not None:
+            try:
+                obj.requester_name = obj.requester.name
+            except Exception:
+                pass
+        if hasattr(obj, "stage") and obj.stage is not None:
+            try:
+                obj.stage_name = obj.stage.stage_name
+            except Exception:
+                pass
+        return super().from_orm(obj)
+
 
 class AdminOverrideDecision(BaseModel):
     approved: bool

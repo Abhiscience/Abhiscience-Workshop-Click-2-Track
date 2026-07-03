@@ -34,8 +34,8 @@ async def _require_admin_role(admin_id: int, db) -> User:
     if not user:
         raise HTTPException(status_code=404, detail="Admin user not found")
     perm = user.role.permissions or {} if user.role else {}
-    manager_role_names = {"WORKSHOP_MANAGER", "SERVICE_MANAGER", "SYSTEM_ADMIN", "BRANCH_ADMIN"}
-    role_ok = user.role and user.role.role_name in manager_role_names
+    manager_role_names = {"WORKSHOP_MANAGER", "SERVICE_MANAGER", "SYSTEM_ADMIN", "BRANCH_ADMIN", "ADMIN"}
+    role_ok = user.role is not None and (user.role.role_name.upper() == "ADMIN" or user.role.role_name in manager_role_names)
     perm_ok = any(perm.get(p) for p in ("admin", "view_all", "configure"))
     if not (role_ok or perm_ok):
         raise HTTPException(status_code=403, detail="Admin role required")
