@@ -9,7 +9,7 @@ from datetime import datetime
 from app.providers.ocr_provider import get_ocr_provider
 from app.core.security import decode_token, get_password_hash
 from app.core.database import get_db
-from app.models.models import User, WorkflowStage, Branch, CaptureEvent, JobCard, Vehicle
+from app.models.models import User, WorkflowStage, Branch, CaptureEvent, JobCard, Vehicle, Role, JobCategory
 
 router = APIRouter()
 
@@ -271,9 +271,6 @@ async def plate_ocr(file: UploadFile = File(...)):
     if not result.get("success") or not result.get("plate_text_raw"):
         raise HTTPException(status_code=422, detail=result.get("error", "No license plate detected"))
     return _parse_plate(result["plate_text_raw"])
-
-from app.models.models import Role, JobCategory
-
 
 @router.get("/roles")
 async def list_roles(
