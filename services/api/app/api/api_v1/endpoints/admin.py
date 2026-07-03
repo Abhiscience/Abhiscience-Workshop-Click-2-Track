@@ -80,13 +80,9 @@ async def get_workflow_stages(
     db: AsyncSession = Depends(get_db)
 ):
     """Get workflow stage configuration."""
-<<<<<<< HEAD
-    stmt = select(WorkflowStage).options(joinedload(WorkflowStage.role))
-=======
     from sqlalchemy.orm import selectinload
 
     stmt = select(WorkflowStage).options(selectinload(WorkflowStage.role))
->>>>>>> origin/main
     if branch_id:
         stmt = stmt.where(WorkflowStage.branch_id == branch_id)
     stmt = stmt.order_by(WorkflowStage.sequence_order)
