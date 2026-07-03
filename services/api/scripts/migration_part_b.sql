@@ -34,5 +34,4 @@ ALTER TABLE workflow_stages
 ALTER TABLE workflow_stages
     ADD COLUMN IF NOT EXISTS skip_deviation BOOLEAN NOT NULL DEFAULT FALSE;
 
-ALTER TABLE workflow_stages
-    ADD COLUMN IF NOT EXISTS is_rework BOOLEAN NOT NULL DEFAULT FALSE;
+-- NOTE: is_rework was removed; rework detection is dynamic per job-card sequence.

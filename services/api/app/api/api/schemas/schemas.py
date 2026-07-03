@@ -47,7 +47,6 @@ class WorkflowStageBase(BaseModel):
     sequence_order: int
     capture_mandatory: Optional[bool] = False
     skip_deviation: Optional[bool] = False
-    is_rework: Optional[bool] = False
 
 
 class WorkflowStageCreate(WorkflowStageBase):

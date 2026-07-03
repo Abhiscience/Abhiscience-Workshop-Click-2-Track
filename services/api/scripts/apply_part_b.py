@@ -31,7 +31,6 @@ async def main():
             for col_name, col_sql in (
                 ("allow_override", "ALTER TABLE workflow_stages ADD COLUMN allow_override BOOLEAN NOT NULL DEFAULT TRUE"),
                 ("skip_deviation", "ALTER TABLE workflow_stages ADD COLUMN skip_deviation BOOLEAN NOT NULL DEFAULT FALSE"),
-                ("is_rework", "ALTER TABLE workflow_stages ADD COLUMN is_rework BOOLEAN NOT NULL DEFAULT FALSE"),
             ):
                 if col_name not in cols:
                     sync_conn.execute(text(col_sql))
