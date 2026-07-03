@@ -95,7 +95,7 @@ async def create_capture(
         plate_text_raw=ocr_plate,
         plate_text_normalized=normalize_plate(ocr_plate) if ocr_plate else None,
         plate_confidence=ocr_confidence,
-        match_status=MatchStatus.PENDING_NO_JC,
+        match_status=(MatchStatus.PENDING_NO_JC.value if hasattr(MatchStatus.PENDING_NO_JC, "value") else str(MatchStatus.PENDING_NO_JC)),
         captured_at_device=datetime.utcnow(),
         remarks=remarks,
         work_done_category_id=work_done_category_id,

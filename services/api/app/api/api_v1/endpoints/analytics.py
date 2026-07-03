@@ -51,7 +51,7 @@ def _date_range_bounds(d: date):
 
 @router.get("/dashboard/live-workshop-status")
 async def get_live_workshop_status(
-    branch_id: str = None,
+    branch_id: int = None,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -146,7 +146,7 @@ async def get_live_workshop_status(
 
 @router.get("/dashboard/utilization-metrics", response_model=UtilizationMetrics)
 async def get_utilization_metrics(
-    branch_id: str = None,
+    branch_id: int = None,
     date: str = None,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -272,7 +272,7 @@ async def get_utilization_metrics(
 
 @router.get("/dashboard/manpower-summary")
 async def get_manpower_summary(
-    branch_id: str = None,
+    branch_id: int = None,
     date: str = None,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -322,7 +322,7 @@ async def get_manpower_summary(
 
 @router.get("/dashboard/deviation-summary")
 async def get_deviation_summary(
-    branch_id: str = None,
+    branch_id: int = None,
     date: str = None,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
