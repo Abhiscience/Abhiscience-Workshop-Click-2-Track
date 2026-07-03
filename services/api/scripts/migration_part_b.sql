@@ -30,3 +30,9 @@ CREATE INDEX IF NOT EXISTS idx_override_requests_created_at
 
 ALTER TABLE workflow_stages
     ADD COLUMN IF NOT EXISTS allow_override BOOLEAN NOT NULL DEFAULT TRUE;
+
+ALTER TABLE workflow_stages
+    ADD COLUMN IF NOT EXISTS skip_deviation BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE workflow_stages
+    ADD COLUMN IF NOT EXISTS is_rework BOOLEAN NOT NULL DEFAULT FALSE;

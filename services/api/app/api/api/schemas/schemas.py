@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, model_validator
-from typing import Optional
+from typing import Optional, List, Dict
 from datetime import datetime
 
 
@@ -46,6 +46,8 @@ class WorkflowStageBase(BaseModel):
     stage_name: str
     sequence_order: int
     capture_mandatory: Optional[bool] = False
+    skip_deviation: Optional[bool] = False
+    is_rework: Optional[bool] = False
 
 
 class WorkflowStageCreate(WorkflowStageBase):
@@ -262,6 +264,57 @@ class PendingVehicleResponse(PendingVehicleBase):
     
     class Config:
         from_attributes = True
+
+
+# Deviation report schemas (morning meeting)
+class StageSequenceEntry(BaseModel):
+    stage_id: int
+    stage_name: Optional[str]
+    stage_code: Optional[str]
+
+
+class RoleDeviationSummary(BaseModel):
+    deviation_count: int
+    deviations: List[dict]
+
+
+class ActualCaptureEntry(BaseModel):
+    event_id: int
+    stage_id: int
+    stage_name: Optional[str]
+    stage_code: Optional[str]
+    role_name: Optional[str]
+    user_name: Optional[str]
+    user_id: Optional[int]
+    captured_at: Optional[str]
+
+
+class VehicleDeviationCycle(BaseModel):
+    job_card_id: Optional[int]
+    vehicle_id: Optional[int]
+    vehicle_registration: Optional[str]
+    external_job_card_no: Optional[str]
+    ideal_sequence: List[StageSequenceEntry]
+    actual_sequence: List[ActualCaptureEntry]
+    deviations: List[dict]
+    deviation_count: int
+
+
+class DeviationReportSummary(BaseModel):
+    total_deviations: int
+    vehicles_with_deviations: int
+    total_vehicles_reviewed: int
+    by_type: Dict[str, int]
+    by_severity: Dict[str, int]
+
+
+class MorningMeetingDeviationReport(BaseModel):
+    target_date: str
+    branch_id: Optional[int]
+    summary: DeviationReportSummary
+    per_role: Dict[str, RoleDeviationSummary]
+    per_vehicle: List[VehicleDeviationCycle]
+    deviations: List[dict]
 
 
 # Analytics schemas

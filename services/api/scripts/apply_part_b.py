@@ -25,15 +25,18 @@ async def main():
         await conn.run_sync(Base.metadata.create_all, checkfirst=True)
 
         # Check/add allow_override column idempotently.
-        def ensure_allow_override_column(sync_conn):
+        def ensure_additional_columns(sync_conn):
             inspector = inspect(sync_conn)
             cols = {c["name"] for c in inspector.get_columns("workflow_stages")}
-            if "allow_override" not in cols:
-                sync_conn.execute(
-                    text("ALTER TABLE workflow_stages ADD COLUMN allow_override BOOLEAN NOT NULL DEFAULT TRUE")
-                )
+            for col_name, col_sql in (
+                ("allow_override", "ALTER TABLE workflow_stages ADD COLUMN allow_override BOOLEAN NOT NULL DEFAULT TRUE"),
+                ("skip_deviation", "ALTER TABLE workflow_stages ADD COLUMN skip_deviation BOOLEAN NOT NULL DEFAULT FALSE"),
+                ("is_rework", "ALTER TABLE workflow_stages ADD COLUMN is_rework BOOLEAN NOT NULL DEFAULT FALSE"),
+            ):
+                if col_name not in cols:
+                    sync_conn.execute(text(col_sql))
 
-        await conn.run_sync(ensure_allow_override_column)
+        await conn.run_sync(ensure_additional_columns)
 
     await engine.dispose()
     print("Part B migration applied successfully.")

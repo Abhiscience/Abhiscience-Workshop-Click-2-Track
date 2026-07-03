@@ -67,6 +67,8 @@ class WorkflowStage(Base):
     capture_mandatory = Column(Boolean, default=False)
     role_id = Column(Integer, ForeignKey("roles.role_id"), nullable=True)
     allow_override = Column(Boolean, default=True)
+    skip_deviation = Column(Boolean, default=False)  # Part D: "not applicable" stages
+    is_rework = Column(Boolean, default=False)       # Part E: legitimate rework cycle marker
     
     branch = relationship("Branch", back_populates="workflow_stages")
     role = relationship("Role", back_populates="workflow_stages", uselist=False)

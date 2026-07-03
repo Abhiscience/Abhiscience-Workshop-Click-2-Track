@@ -122,6 +122,9 @@ async def get_workflow_stages(
                 "stage_name": s.stage_name,
                 "sequence_order": s.sequence_order,
                 "capture_mandatory": s.capture_mandatory,
+                "allow_override": s.allow_override,
+                "skip_deviation": getattr(s, "skip_deviation", False),
+                "is_rework": getattr(s, "is_rework", False),
                 "role_id": s.role_id,
                 "role_name": s.role.role_name if s.role else None,
             }
@@ -144,6 +147,9 @@ async def create_workflow_stage(
         sequence_order=stage_data.get("sequence_order"),
         capture_mandatory=stage_data.get("capture_mandatory", True),
         role_id=stage_data.get("role_id"),
+        allow_override=stage_data.get("allow_override", True),
+        skip_deviation=stage_data.get("skip_deviation", False),
+        is_rework=stage_data.get("is_rework", False),
     )
     db.add(stage)
     try:
@@ -167,6 +173,9 @@ async def create_workflow_stage(
             "stage_name": stage.stage_name,
             "sequence_order": stage.sequence_order,
             "capture_mandatory": stage.capture_mandatory,
+            "allow_override": getattr(stage, "allow_override", True),
+            "skip_deviation": getattr(stage, "skip_deviation", False),
+            "is_rework": getattr(stage, "is_rework", False),
             "role_id": stage.role_id,
             "role_name": role.role_name if role else None,
         }

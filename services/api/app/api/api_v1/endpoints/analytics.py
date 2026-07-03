@@ -319,6 +319,29 @@ async def get_manpower_summary(
     }
 
 
+@router.get("/dashboard/morning-meeting-deviations")
+async def get_morning_meeting_deviations(
+    branch_id: int = None,
+    date: str = None,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Morning-meeting deviation report per role and per vehicle cycle.
+
+    Compares the expected workflow stage sequence against actual captures for the
+    target date, flagging missing mandatory captures, out-of-order captures
+    (including late/forgotten-then-logged events), and long stay times.
+
+    Stages marked skip_deviation (Part D) or is_rework (Part E) are excluded from
+    the expected sequence so legitimate exceptions do not appear as anomalies.
+    """
+    from app.services.deviation_report_service import build_morning_meeting_report
+
+    target_date = _parse_date(date)
+    report = await build_morning_meeting_report(db, target_date, branch_id)
+    return report
+
+
 @router.get("/dashboard/deviation-summary")
 async def get_deviation_summary(
     branch_id: int = None,
