@@ -220,9 +220,7 @@ async def get_utilization_metrics(
                     continue
                 ev_stage = next((stage for event, stage in ordered_captures if stage.sequence_order == seq), None)
                 if ev_stage and ev_stage.role_id:
-                    role_name = None
-                    if hasattr(ev_stage, 'role') and ev_stage.role:
-                        role_name = ev_stage.role.role_name
+                    role_name = role_name_map.get(ev_stage.stage_id)
                     if role_name == "TECHNICIAN":
                         tech_time = timestamps_by_seq.get(seq)
                         break

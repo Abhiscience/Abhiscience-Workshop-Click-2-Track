@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import IntegrityError
 import re
 from datetime import datetime
@@ -79,7 +80,7 @@ async def get_workflow_stages(
     db: AsyncSession = Depends(get_db)
 ):
     """Get workflow stage configuration."""
-    stmt = select(WorkflowStage)
+    stmt = select(WorkflowStage).options(joinedload(WorkflowStage.role))
     if branch_id:
         stmt = stmt.where(WorkflowStage.branch_id == branch_id)
     stmt = stmt.order_by(WorkflowStage.sequence_order)
