@@ -30,7 +30,7 @@ async def get_admin_user(request: Request = None) -> dict:
 
 
 async def _require_admin_role(admin_id: int, db) -> User:
-    user = (await db.execute(future_select(User).where(User.user_id == admin_id))).scalar_one_or_none()
+    user = (await db.execute(future_select(User).options(joinedload(User.role)).where(User.user_id == admin_id))).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="Admin user not found")
     perm = user.role.permissions or {} if user.role else {}
