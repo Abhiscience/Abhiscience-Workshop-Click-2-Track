@@ -162,8 +162,8 @@ class CaptureEvent(Base):
     stage = relationship("WorkflowStage")
     user = relationship("User", foreign_keys=[user_id])
     voider = relationship("User", foreign_keys=[voided_by])
-    job_card = relationship("JobCard", back_populates="capture_events")
     corrected_event = relationship("CaptureEvent", remote_side=[event_id], uselist=False)
+    job_card = relationship("JobCard", back_populates="capture_events")
     work_done_category = relationship("JobCategory", back_populates="captures")
 
 class PendingVehicle(Base):
