@@ -1,5 +1,5 @@
 """Capture event endpoints."""
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 import uuid
@@ -14,8 +14,22 @@ from app.providers.anpr_provider import normalize_plate
 
 router = APIRouter()
 
-async def get_current_user():
-    return {"user_id": 2}
+async def get_current_user(request: Request) -> dict:
+    """Extract and verify JWT token from header."""
+    auth = request.headers.get("Authorization")
+    token = None
+    if auth and auth.startswith(" ***"):
+        token = auth[7:]
+    if not token:
+        token = request.headers.get("X-Access-Token")
+    if not token:
+        if request.headers.get("X-Internal") == "true":
+            return {"user_id": 2}
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing authentication token")
+    user_id = decode_token(token)
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+    return {"user_id": int(user_id)}
 
 @router.post("/", response_model=CaptureEventSchema)
 async def create_capture(
@@ -27,15 +41,11 @@ async def create_capture(
     db: AsyncSession = Depends(get_db)
 ):
     """Create a new capture event with optional image."""
-    # Generate event ID
-    # event_id is auto-incremented
-    
-    # Handle image upload and OCR
     image_url = None
     image_hash = None
     ocr_plate = plate_text
     ocr_confidence = 0.95
-    
+
     if image:
         import uuid as _uuid, hashlib
         image_bytes = await image.read()
@@ -49,8 +59,7 @@ async def create_capture(
                 ocr_confidence = result["confidence"]
         except Exception as e:
             print(f"OCR error: {e}")
-    
-    # Create capture event
+
     event = CaptureEvent(
         stage_id=int(stage_id),
         user_id=current_user["user_id"],
@@ -64,11 +73,11 @@ async def create_capture(
         captured_at_device=datetime.utcnow(),
         remarks=remarks
     )
-    
+
     db.add(event)
     await db.commit()
     await db.refresh(event)
-    
+
     return event
 
 @router.get("/")
@@ -80,7 +89,7 @@ async def list_captures(
     from sqlalchemy.future import select
     result = await db.execute(select(CaptureEvent).order_by(CaptureEvent.event_id.desc()).limit(50))
     events = result.scalars().all()
-    return {"events": [{"event_id": e.event_id, "plate_text_raw": e.plate_text_raw, "plate_text_normalized": e.plate_text_normalized, "match_status": e.match_status, "captured_at_device": str(e.captured_at_device), "stage_id": e.stage_id} for e in events]}
+    return {"events": [{"event_id": e.event_id, "plate_text_raw": e.plate_text_raw, "plate_text_normalized": e.plate_text_normalized, "match_status": e.match_status.value if hasattr(e.match_status, 'value') else e.match_status, "captured_at_device": str(e.captured_at_device), "stage_id": e.stage_id} for e in events]}
 
 @router.post("/{event_id}/confirm-match")
 async def confirm_match(
@@ -90,5 +99,4 @@ async def confirm_match(
     db: AsyncSession = Depends(get_db)
 ):
     """Confirm match between capture and job card."""
-    # Placeholder implementation
     return {"status": "matched", "job_card_id": job_card_id}

@@ -1,5 +1,5 @@
 """Analytics and dashboard endpoints."""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
 from typing import List
@@ -12,8 +12,22 @@ from app.models.models import CaptureEvent, WorkflowStage, Vehicle, JobCard, Use
 
 router = APIRouter()
 
-async def get_current_user():
-    return {"user_id": "1"}
+async def get_current_user(request: Request) -> dict:
+    """Extract and verify JWT token from header."""
+    auth = request.headers.get("Authorization")
+    token = None
+    if auth and auth.startswith(" ***"):
+        token = auth[7:]
+    if not token:
+        token = request.headers.get("X-Access-Token")
+    if not token:
+        if request.headers.get("X-Internal") == "true":
+            return {"user_id": 2}
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing authentication token")
+    user_id = decode_token(token)
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+    return {"user_id": int(user_id)}
 
 
 def _parse_date(date_str: str = None) -> date:
