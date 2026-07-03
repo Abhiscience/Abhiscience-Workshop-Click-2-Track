@@ -196,6 +196,7 @@ async def get_utilization_metrics(
         ))
 
         # Generic time-gap logic based on sequence_order, not hardcoded stage codes
+        role_name_map = {s.stage_id: (getattr(s.role, "role_name", None) if hasattr(s, "role") else None) for s in stages}
         ordered_captures = [(event, stage) for event, stage in evs if stage and stage.sequence_order is not None]
         if not ordered_captures:
             continue
