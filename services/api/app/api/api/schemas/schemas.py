@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional
 from datetime import datetime
 
@@ -223,19 +223,14 @@ class OverrideRequestResponse(BaseModel):
     class Config:
         from_attributes = True
 
+    @model_validator(mode="before")
     @classmethod
-    def from_orm(cls, obj):
+    def populate_names(cls, obj):
         if hasattr(obj, "requester") and obj.requester is not None:
-            try:
-                obj.requester_name = obj.requester.name
-            except Exception:
-                pass
+            obj.requester_name = obj.requester.name
         if hasattr(obj, "stage") and obj.stage is not None:
-            try:
-                obj.stage_name = obj.stage.stage_name
-            except Exception:
-                pass
-        return super().from_orm(obj)
+            obj.stage_name = obj.stage.stage_name
+        return obj
 
 
 class AdminOverrideDecision(BaseModel):
