@@ -68,6 +68,8 @@ class WorkflowStage(Base):
     capture_mandatory = Column(Boolean, default=True)
     
     branch = relationship("Branch", back_populates="workflow_stages")
+    role = relationship("Role")
+    captures = relationship("CaptureEvent", back_populates="stage")
 
 class Vehicle(Base):
     __tablename__ = "vehicles"

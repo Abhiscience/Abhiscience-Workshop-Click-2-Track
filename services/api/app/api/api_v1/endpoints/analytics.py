@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
+from sqlalchemy.orm import joinedload
 from typing import List
 from datetime import datetime, date, timedelta
 from collections import defaultdict
@@ -56,7 +57,7 @@ async def get_live_workshop_status(
 ):
     """Get live status of all vehicles currently in workshop (no exit capture yet)."""
     # Find the EXIT/GATE_EXIT stage if configured
-    exit_stage_stmt = select(WorkflowStage).where(WorkflowStage.stage_code.ilike("%EXIT%"))
+    exit_stage_stmt = select(WorkflowStage).options(joinedload(WorkflowStage.role)).where(WorkflowStage.stage_code.ilike("%EXIT%"))
     if branch_id:
         exit_stage_stmt = exit_stage_stmt.where(WorkflowStage.branch_id == branch_id)
     exit_result = await db.execute(exit_stage_stmt)
@@ -155,7 +156,7 @@ async def get_utilization_metrics(
     start, end = _date_range_bounds(target_date)
 
     # Load stages
-    stage_stmt = select(WorkflowStage)
+    stage_stmt = select(WorkflowStage).options(joinedload(WorkflowStage.role))
     if branch_id:
         stage_stmt = stage_stmt.where(WorkflowStage.branch_id == branch_id)
     stage_result = await db.execute(stage_stmt)
@@ -331,7 +332,7 @@ async def get_deviation_summary(
     start, end = _date_range_bounds(target_date)
 
     # Expected order
-    stage_stmt = select(WorkflowStage).order_by(WorkflowStage.sequence_order)
+    stage_stmt = select(WorkflowStage).options(joinedload(WorkflowStage.role)).order_by(WorkflowStage.sequence_order)
     if branch_id:
         stage_stmt = stage_stmt.where(WorkflowStage.branch_id == branch_id)
     stage_result = await db.execute(stage_stmt)

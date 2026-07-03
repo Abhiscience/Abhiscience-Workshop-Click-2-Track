@@ -10,6 +10,7 @@ from app.models.models.models import (
     JobCard,
     CaptureEvent,
     PendingVehicle,
+    JobCategory,
 )
 
 class MatchStatus(str, enum.Enum):
