@@ -15,7 +15,7 @@ export async function POST(request: Request) {
 
     const response = await fetch(url, {
       method: 'POST',
-      headers: { Authorization: *** ${token}` },
+      headers: { Authorization: ` *** ${token}` },
       body: fd,
     });
 
