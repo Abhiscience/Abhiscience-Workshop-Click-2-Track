@@ -11,6 +11,8 @@ from app.models.models.models import (
     CaptureEvent,
     PendingVehicle,
     JobCategory,
+    OverrideRequest,
+    OverrideRequestStatus,
 )
 
 class MatchStatus(str, enum.Enum):

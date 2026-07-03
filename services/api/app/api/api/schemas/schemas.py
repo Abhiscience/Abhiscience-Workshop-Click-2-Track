@@ -195,6 +195,40 @@ class CaptureEventResponse(BaseModel):
         from_attributes = True
 
 
+class OverrideRequestCreate(BaseModel):
+    stage_id: int
+    reason: str
+    job_card_id: Optional[int] = None
+    vehicle_id: Optional[int] = None
+    plate_text: Optional[str] = None
+    remarks: Optional[str] = None
+    work_done_category_id: Optional[int] = None
+
+
+class OverrideRequestResponse(BaseModel):
+    override_request_id: int
+    requester_user_id: int
+    requester_name: Optional[str] = None
+    stage_id: int
+    stage_name: Optional[str] = None
+    job_card_id: Optional[int] = None
+    vehicle_id: Optional[int] = None
+    reason: str
+    status: str
+    approved_by: Optional[int] = None
+    decided_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    resolved_event_id: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+
+class AdminOverrideDecision(BaseModel):
+    approved: bool
+    admin_notes: Optional[str] = None
+
+
 class CaptureEventConfirmMatch(BaseModel):
     job_card_id: Optional[int] = None
     vehicle_id: Optional[int] = None

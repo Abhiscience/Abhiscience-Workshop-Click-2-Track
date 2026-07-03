@@ -16,9 +16,14 @@ class MatchStatus(str, enum.Enum):
     UNMATCHED = "UNMATCHED"
 
 class LinkStatus(str, enum.Enum):
-    PENDING = "PENDING"
-    LINKED = "LINKED"
+    PENDING  = "PENDING"
+    LINKED   = "LINKED"
     ORPHANED = "ORPHANED"
+
+class OverrideRequestStatus(str, enum.Enum):
+    PENDING  = "PENDING"
+    APPROVED = "APPROVED"
+    DENIED   = "DENIED"
 
 class User(Base):
     __tablename__ = "users"
@@ -66,6 +71,7 @@ class WorkflowStage(Base):
     stage_name = Column(String(200), nullable=False)
     sequence_order = Column(Integer)
     capture_mandatory = Column(Boolean, default=True)
+    allow_override = Column(Boolean, default=True)
     
     branch = relationship("Branch", back_populates="workflow_stages")
     role = relationship("Role")
@@ -164,4 +170,29 @@ class JobCategory(Base):
     is_active = Column(Boolean, default=True)
 
     captures = relationship("CaptureEvent", back_populates="work_done_category")
+
+
+class OverrideRequest(Base):
+    __tablename__ = "override_requests"
+
+    override_request_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    requester_user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
+    stage_id = Column(Integer, ForeignKey("workflow_stages.stage_id"), nullable=False)
+    job_card_id = Column(Integer, ForeignKey("job_cards.job_card_id"), nullable=True)
+    vehicle_id = Column(Integer, ForeignKey("vehicles.vehicle_id"), nullable=True)
+    reason = Column(Text, nullable=False)
+    request_data = Column(JSON, default=dict)
+    status = Column(String(50), default=OverrideRequestStatus.PENDING.value)
+    approved_by = Column(Integer, ForeignKey("users.user_id"), nullable=True)
+    decided_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    resolved_event_id = Column(Integer, ForeignKey("capture_events.event_id"), nullable=True)
+
+    requester = relationship("User", foreign_keys=[requester_user_id], backref="override_requests_requested")
+    approver = relationship("User", foreign_keys=[approved_by], backref="override_requests_decided")
+    stage = relationship("WorkflowStage")
+    job_card = relationship("JobCard")
+    vehicle = relationship("Vehicle")
+    resolved_event = relationship("CaptureEvent")
+
 

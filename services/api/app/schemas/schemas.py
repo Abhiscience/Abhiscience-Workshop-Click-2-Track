@@ -109,10 +109,46 @@ class CaptureEvent(CaptureEventBase):
         from_attributes = True
 
 
+# Override request schemas
+class OverrideRequestCreate(BaseModel):
+    stage_id: int
+    reason: str
+    job_card_id: Optional[int] = None
+    vehicle_id: Optional[int] = None
+    plate_text: Optional[str] = None
+    remarks: Optional[str] = None
+    work_done_category_id: Optional[int] = None
+
+
+class OverrideRequestResponse(BaseModel):
+    override_request_id: int
+    requester_user_id: int
+    requester_name: Optional[str] = None
+    stage_name: Optional[str] = None
+    stage_id: int
+    job_card_id: Optional[int]
+    vehicle_id: Optional[int]
+    reason: str
+    status: str
+    approved_by: Optional[int]
+    decided_at: Optional[datetime]
+    created_at: Optional[datetime]
+    resolved_event_id: Optional[int]
+
+    class Config:
+        from_attributes = True
+
+
+class AdminOverrideDecision(BaseModel):
+    approved: bool
+    admin_notes: Optional[str] = None
+
+
 # Auth schemas
 class LoginRequest(BaseModel):
     mobile: str
     password: str
+
 
 class Token(BaseModel):
     access_token: str

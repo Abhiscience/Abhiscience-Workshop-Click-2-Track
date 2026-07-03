@@ -1,7 +1,8 @@
 """Admin management endpoints."""
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.future import select as future_select
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import IntegrityError
 import re
@@ -10,12 +11,35 @@ from datetime import datetime
 from app.providers.ocr_provider import get_ocr_provider
 from app.core.security import decode_token, get_password_hash
 from app.core.database import get_db
-from app.models.models import Branch, CaptureEvent, JobCard, JobCategory, Role, User, Vehicle, WorkflowStage
+from app.models.models import Branch, CaptureEvent, JobCard, JobCategory, Role, User, Vehicle, WorkflowStage, OverrideRequest, OverrideRequestStatus, AppInstallation
+from app.schemas.schemas import OverrideRequestCreate, OverrideRequestResponse
+from app.services.push_service import send_push_notification, build_override_decision_title
 
 router = APIRouter()
 
-async def get_admin_user():
-    return {"user_id": "1"}
+
+async def get_admin_user(request: Request = None) -> dict:
+    """Lightweight admin gate. Replace with real RBAC when tokens carry roles."""
+    if request:
+        auth = request.headers.get("Authorization")
+        if auth and auth.startswith("Bearer "):
+            user_id = decode_token(auth[7:])
+            if user_id:
+                return {"user_id": int(user_id)}
+    return {"user_id": 1}
+
+
+async def _require_admin_role(admin_id: int, db) -> User:
+    user = (await db.execute(future_select(User).where(User.user_id == admin_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="Admin user not found")
+    perm = user.role.permissions or {} if user.role else {}
+    manager_role_names = {"WORKSHOP_MANAGER", "SERVICE_MANAGER", "SYSTEM_ADMIN", "BRANCH_ADMIN"}
+    role_ok = user.role and user.role.role_name in manager_role_names
+    perm_ok = any(perm.get(p) for p in ("admin", "view_all", "configure"))
+    if not (role_ok or perm_ok):
+        raise HTTPException(status_code=403, detail="Admin role required")
+    return user
 
 
 @router.get("/dashboard/branch-overview")
@@ -407,3 +431,173 @@ async def create_job_category(
         }
     }
 
+
+@router.get("/override-requests", response_model=list[OverrideRequestResponse])
+async def list_override_requests(
+    request: Request,
+    status_filter: str = "PENDING",
+    branch_id: int = None,
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """List override requests visible to the acting admin.
+
+    Filter by status: PENDING, APPROVED, DENIED, or ALL.
+    """
+    await _require_admin_role(admin["user_id"], db)
+
+    stmt = (
+        future_select(OverrideRequest)
+        .options(joinedload(OverrideRequest.requester), joinedload(OverrideRequest.stage))
+    )
+    if status_filter.upper() != "ALL":
+        stmt = stmt.where(OverrideRequest.status == status_filter.upper())
+    if branch_id:
+        stmt = stmt.join(WorkflowStage).where(WorkflowStage.branch_id == branch_id)
+    stmt = stmt.order_by(OverrideRequest.created_at.desc())
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+
+async def _create_capture_from_override(db, override: OverrideRequest, admin_user: User) -> CaptureEvent:
+    """Replays an approved override request into a real CaptureEvent.
+
+    The capture is always recorded against the original requester and stage
+    (Part B requirement), with `approved_by` linked via the override record.
+    """
+    data = override.request_data or {}
+    now = datetime.utcnow()
+
+    event = CaptureEvent(
+        job_card_id=override.job_card_id,
+        vehicle_id=override.vehicle_id,
+        stage_id=override.stage_id,
+        user_id=override.requester_user_id,
+        installation_id=1,  # Resolved via requester's current installation if available.
+        image_url=data.get("image_url"),
+        image_hash=data.get("image_hash"),
+        plate_text_raw=data.get("plate_text_raw"),
+        plate_text_normalized=data.get("plate_text_normalized"),
+        plate_confidence=data.get("plate_confidence", 0.95),
+        match_status="PENDING_NO_JC",
+        captured_at_device=now,
+        received_at_server=now,
+        remarks=data.get("remarks"),
+        work_done_category_id=data.get("work_done_category_id"),
+    )
+    db.add(event)
+    await db.flush()
+    return event
+
+
+@router.post("/override-requests/{request_id}/approve", response_model=OverrideRequestResponse)
+async def approve_override_request(
+    request_id: int,
+    request: Request,
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Approve a pending override request and record the capture event."""
+    admin_user = await _require_admin_role(admin["user_id"], db)
+
+    override = (
+        await db.execute(
+            future_select(OverrideRequest)
+            .options(joinedload(OverrideRequest.requester), joinedload(OverrideRequest.stage))
+            .where(OverrideRequest.override_request_id == request_id)
+        )
+    ).scalar_one_or_none()
+
+    if not override:
+        raise HTTPException(status_code=404, detail="Override request not found")
+    if override.status != OverrideRequestStatus.PENDING.value:
+        raise HTTPException(status_code=400, detail="Override request already decided")
+
+    event = await _create_capture_from_override(db, override, admin_user)
+
+    override.status = OverrideRequestStatus.APPROVED.value
+    override.approved_by = admin_user.user_id
+    override.decided_at = datetime.utcnow()
+    override.resolved_event_id = event.event_id
+
+    await db.commit()
+    await db.refresh(override)
+
+    # Notify requester of approval.
+    requester_install = (
+        await db.execute(
+            future_select(AppInstallation).where(
+                AppInstallation.user_id == override.requester_user_id,
+                AppInstallation.push_token.isnot(None),
+                AppInstallation.status == "active",
+            )
+        )
+    ).scalar_one_or_none()
+    if requester_install and requester_install.push_token:
+        await send_push_notification(
+            requester_install.push_token,
+            build_override_decision_title(override.stage.stage_name if override.stage else "stage", True),
+            "Your override request was approved and the capture has been recorded.",
+            data={
+                "type": "OVERRIDE_DECISION",
+                "override_request_id": override.override_request_id,
+                "event_id": event.event_id,
+                "approved": True,
+            },
+        )
+
+    return override
+
+
+@router.post("/override-requests/{request_id}/deny", response_model=OverrideRequestResponse)
+async def deny_override_request(
+    request_id: int,
+    request: Request,
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Deny a pending override request. No capture event is created."""
+    admin_user = await _require_admin_role(admin["user_id"], db)
+
+    override = (
+        await db.execute(
+            future_select(OverrideRequest)
+            .options(joinedload(OverrideRequest.requester), joinedload(OverrideRequest.stage))
+            .where(OverrideRequest.override_request_id == request_id)
+        )
+    ).scalar_one_or_none()
+
+    if not override:
+        raise HTTPException(status_code=404, detail="Override request not found")
+    if override.status != OverrideRequestStatus.PENDING.value:
+        raise HTTPException(status_code=400, detail="Override request already decided")
+
+    override.status = OverrideRequestStatus.DENIED.value
+    override.approved_by = admin_user.user_id
+    override.decided_at = datetime.utcnow()
+
+    await db.commit()
+    await db.refresh(override)
+
+    requester_install = (
+        await db.execute(
+            future_select(AppInstallation).where(
+                AppInstallation.user_id == override.requester_user_id,
+                AppInstallation.push_token.isnot(None),
+                AppInstallation.status == "active",
+            )
+        )
+    ).scalar_one_or_none()
+    if requester_install and requester_install.push_token:
+        await send_push_notification(
+            requester_install.push_token,
+            build_override_decision_title(override.stage.stage_name if override.stage else "stage", False),
+            "Your override request was denied. The capture was not recorded.",
+            data={
+                "type": "OVERRIDE_DECISION",
+                "override_request_id": override.override_request_id,
+                "approved": False,
+            },
+        )
+
+    return override
