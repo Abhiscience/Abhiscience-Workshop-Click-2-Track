@@ -13,9 +13,10 @@ export async function POST(request: Request) {
     let url = `${baseUrl}/api/v1/captures/?stage_id=${stage_id}`;
     if (manual_plate) url += `&plate_text=${encodeURIComponent(manual_plate)}`;
 
+    const hdr = `Bearer` + ' ' + token;
     const response = await fetch(url, {
       method: 'POST',
-      headers: { Authorization: ` *** ${token}` },
+      headers: { Authorization: hdr },
       body: fd,
     });
 
