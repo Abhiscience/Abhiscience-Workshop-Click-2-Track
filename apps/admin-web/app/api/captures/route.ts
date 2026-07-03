@@ -9,12 +9,13 @@ export async function POST(request: Request) {
     const fd = new FormData();
     if (image) fd.append('image', image as Blob);
 
-    let url = `http://76.13.223.20:8001/api/v1/captures/?stage_id=${stage_id}`;
+    const baseUrl = `${process.env.NEXT_PUBLIC_API_URL?.replace("/api/v1", "") || "http://localhost:8001"}`;
+    let url = `${baseUrl}/api/v1/captures/?stage_id=${stage_id}`;
     if (manual_plate) url += `&plate_text=${encodeURIComponent(manual_plate)}`;
 
     const response = await fetch(url, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: *** ${token}` },
       body: fd,
     });
 
