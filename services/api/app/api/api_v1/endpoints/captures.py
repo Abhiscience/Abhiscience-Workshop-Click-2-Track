@@ -6,6 +6,7 @@ import uuid
 import asyncio
 from datetime import datetime
 from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.models.models import CaptureEvent, MatchStatus, PendingVehicle, WorkflowStage, JobCategory, User, AppInstallation, Role, OverrideRequest, OverrideRequestStatus
@@ -237,8 +238,8 @@ async def submit_override_request(
     # Notify branch managers and system admins with push tokens.
     manager_role_ids_result = await db.execute(
         select(Role.role_id).where(
-            (Role.permissions.op("->>")("admin").as_boolean() == True) |
-            (Role.permissions.op("->>")("view_all").as_boolean() == True) |
+            (Role.permissions["admin"].as_boolean() == True) |
+            (Role.permissions["view_all"].as_boolean() == True) |
             (Role.role_name.in_(["WORKSHOP_MANAGER", "SERVICE_MANAGER", "SYSTEM_ADMIN", "BRANCH_ADMIN"]))
         )
     )
