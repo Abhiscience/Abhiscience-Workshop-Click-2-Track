@@ -6,25 +6,28 @@ morning meeting: per-role and per-vehicle views.
 
 Rework handling (Part E):
   Some stages (e.g. WORK_STARTED) are reused for legitimate rework cycles. A
-  repeated stage_id is treated as a rework cycle — and therefore NOT flagged as
-  a deviation — ONLY when a QC stage (PRE_ROAD_TEST_QC by default, configurable)
-  occurs between the previous capture of that stage and the repeat. Otherwise the
-  repeat is a genuine duplicate/error.
+  repeated stage_id is treated as legitimate rework — and therefore NOT flagged
+  as a deviation — ONLY when a QC stage (PRE_ROAD_TEST_QC by default) occurs
+  between the previous capture of that stage and the repeat. Otherwise the repeat
+  is a genuine duplicate/error.
 
-Part D "not applicable" stages are excluded via the static WorkflowStage.skip_deviation
-flag on the stage; they never appear in the expected sequence, so they never
-generate false-positive deviations.
+Part D "not applicable" stages are excluded via two mechanisms:
+  1. A static WorkflowStage.skip_deviation flag excludes a stage globally.
+  2. A per-job-card JobCardNotApplicableStage row excludes a stage for a
+     specific job card (with a required reason). Those stages are treated as
+     compliant in all calculations.
 """
 from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Any, Set
 from collections import defaultdict
 
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.models.models import CaptureEvent, WorkflowStage, User, Role, JobCard, Vehicle
+from app.services.not_applicable_service import get_not_applicable_stage_ids
 
 
 # Severity constants
@@ -42,6 +45,10 @@ DEV_LONG_WAIT = "LONG_WAIT"
 # Stage codes that act as QC/rework boundary markers. A repeated stage after one of
 # these is treated as legitimate rework.
 REWORK_QC_STAGE_CODES: Set[str] = {"PRE_ROAD_TEST_QC"}
+
+
+def _match_status_value(ms):
+    return ms.value if hasattr(ms, "value") else str(ms)
 
 
 async def _load_expected_stages(
@@ -66,7 +73,12 @@ async def _load_capture_events(
     target_date: date,
     stage_ids: set,
 ) -> List[CaptureEvent]:
-    """Load capture events for the target date, eager-loading relations."""
+    """Load capture events for the target date, eager-loading relations.
+
+    Excludes:
+      - voided captures (Part D correction mechanism)
+      - captures attached to CANCELLED job cards
+    """
     start = datetime.combine(target_date, datetime.min.time())
     end = start + timedelta(days=1)
 
@@ -78,9 +90,15 @@ async def _load_capture_events(
             joinedload(CaptureEvent.job_card),
             joinedload(CaptureEvent.vehicle),
         )
+        .outerjoin(JobCard, CaptureEvent.job_card_id == JobCard.job_card_id)
         .where(
             CaptureEvent.received_at_server >= start,
             CaptureEvent.received_at_server < end,
+            CaptureEvent.voided == False,
+            or_(
+                CaptureEvent.job_card_id.is_(None),
+                JobCard.status != "CANCELLED",
+            ),
         )
         .where(CaptureEvent.stage_id.in_(stage_ids))
         .order_by(CaptureEvent.received_at_server)
@@ -164,6 +182,16 @@ async def build_morning_meeting_report(
         actual_ids = [e.stage_id for e in evs]
         actual_seqs = [expected_order.get(sid) for sid in actual_ids]
 
+        # Determine job_card_id if any event has one
+        job_card_id = None
+        for e in evs:
+            if e.job_card_id:
+                job_card_id = e.job_card_id
+                break
+
+        # Per-job-card not-applicable stages (Part D)
+        na_stage_ids = await get_not_applicable_stage_ids(db, job_card_id) if job_card_id else set()
+
         vehicle_reg = None
         jc_display = None
         if evs[0].vehicle:
@@ -172,9 +200,11 @@ async def build_morning_meeting_report(
             jc_display = evs[0].job_card.external_job_card_no
 
         vehicle_deviations = []
+        # Build ideal sequence excluding globally skipped and per-job N/A stages
         ideal_sequence = [
             {"stage_id": s.stage_id, "stage_name": s.stage_name, "stage_code": s.stage_code}
             for s in sorted(stages.values(), key=lambda x: x.sequence_order or 0)
+            if s.stage_id not in na_stage_ids
         ]
         actual_sequence = [
             {
@@ -190,9 +220,8 @@ async def build_morning_meeting_report(
             for e in evs
         ]
 
-        # 1. Missing mandatory captures (exclude reworked stages that were captured legitimately later).
-        # We only consider a stage "missing" if it was never captured at all in this cycle.
-        mandatory_ids = {sid for sid, s in stages.items() if s.capture_mandatory}
+        # 1. Missing mandatory captures (exclude N/A stages and already captured stages).
+        mandatory_ids = {sid for sid, s in stages.items() if s.capture_mandatory and sid not in na_stage_ids}
         captured_ids = set(actual_ids)
         for sid in sorted(mandatory_ids, key=lambda x: expected_order.get(x, 9999)):
             if sid not in captured_ids:
@@ -220,24 +249,21 @@ async def build_morning_meeting_report(
                     per_role[role_name]["deviations"].append(dev)
 
         # 2. Out-of-order / duplicate captures with dynamic rework detection.
-        # A repeated stage is recognized as legitimate rework only if a QC stage
-        # appears between the previous occurrence and the repeat. Otherwise it is
-        # flagged as a duplicate/out-of-order error.
         first_seen_index: Dict[int, int] = {}
         last_index = -1
         for idx, (sid, seq) in enumerate(zip(actual_ids, actual_seqs)):
             if seq is None:
                 continue
+            # If this stage is marked N/A for this job, skip anomaly flagging entirely
+            # (it should not have been captured; if it was, we ignore it for compliance).
+            if sid in na_stage_ids:
+                continue
 
             prev_idx = first_seen_index.get(sid)
             if prev_idx is not None:
-                # Stage has been seen before. Is this legitimate rework?
                 if _is_qc_between(evs, prev_idx, idx):
-                    # Legitimate rework cycle: do not flag, keep the earlier
-                    # index for subsequent rework checks.
                     continue
                 else:
-                    # Genuine duplicate/error.
                     stage = stage_by_id.get(sid)
                     role_name = None
                     if stage and stage.role:
@@ -260,7 +286,6 @@ async def build_morning_meeting_report(
                     if role_name:
                         per_role[role_name]["deviation_count"] += 1
                         per_role[role_name]["deviations"].append(dev)
-                    # Keep first_seen_index unchanged; don't advance last_index for duplicates.
                     continue
 
             first_seen_index[sid] = idx
@@ -293,7 +318,6 @@ async def build_morning_meeting_report(
             last_index = max(last_index, seq)
 
         # Optional long-wait rule: if first and last capture span > 8 hours.
-        long_wait_dev = None
         times = [e.received_at_server for e in evs if e.received_at_server]
         if len(times) >= 2:
             span = (max(times) - min(times)).total_seconds() / 3600.0
@@ -323,6 +347,7 @@ async def build_morning_meeting_report(
             "actual_sequence": actual_sequence,
             "deviations": vehicle_deviations,
             "deviation_count": len(vehicle_deviations),
+            "not_applicable_stage_ids": list(na_stage_ids),
         })
 
     # Sort vehicles by most deviations first.

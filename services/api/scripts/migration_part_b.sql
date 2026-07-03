@@ -35,3 +35,38 @@ ALTER TABLE workflow_stages
     ADD COLUMN IF NOT EXISTS skip_deviation BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- NOTE: is_rework was removed; rework detection is dynamic per job-card sequence.
+
+-- Part D DDL - job_card_not_applicable_stages + CaptureEvent.voided + JobCard.cancellation_reason
+
+CREATE TABLE IF NOT EXISTS job_card_not_applicable_stages (
+    id SERIAL PRIMARY KEY,
+    job_card_id INTEGER NOT NULL REFERENCES job_cards(job_card_id) ON DELETE CASCADE,
+    stage_id INTEGER NOT NULL REFERENCES workflow_stages(stage_id),
+    reason TEXT NOT NULL,
+    marked_by_user_id INTEGER NOT NULL REFERENCES users(user_id),
+    marked_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+    UNIQUE(job_card_id, stage_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_jc_na_stages_job_card
+    ON job_card_not_applicable_stages(job_card_id);
+CREATE INDEX IF NOT EXISTS idx_jc_na_stages_stage
+    ON job_card_not_applicable_stages(stage_id);
+
+ALTER TABLE capture_events
+    ADD COLUMN IF NOT EXISTS voided BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE capture_events
+    ADD COLUMN IF NOT EXISTS voided_at TIMESTAMP WITHOUT TIME ZONE;
+
+ALTER TABLE capture_events
+    ADD COLUMN IF NOT EXISTS voided_by INTEGER REFERENCES users(user_id);
+
+ALTER TABLE capture_events
+    ADD COLUMN IF NOT EXISTS void_reason TEXT;
+
+ALTER TABLE capture_events
+    ADD COLUMN IF NOT EXISTS corrected_event_id INTEGER REFERENCES capture_events(event_id);
+
+ALTER TABLE job_cards
+    ADD COLUMN IF NOT EXISTS cancellation_reason TEXT;

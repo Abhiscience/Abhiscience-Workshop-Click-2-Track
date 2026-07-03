@@ -39,13 +39,13 @@ class BranchResponse(BranchBase):
         from_attributes = True
 
 
-# WorkflowStage schemas
 class WorkflowStageBase(BaseModel):
     branch_id: int
     stage_code: str
     stage_name: str
     sequence_order: int
     capture_mandatory: Optional[bool] = False
+    allow_override: Optional[bool] = True
     skip_deviation: Optional[bool] = False
 
 
@@ -56,6 +56,18 @@ class WorkflowStageCreate(WorkflowStageBase):
 class WorkflowStageResponse(WorkflowStageBase):
     stage_id: int
     
+    class Config:
+        from_attributes = True
+
+
+class JobCardNotApplicableStageResponse(BaseModel):
+    id: int
+    job_card_id: int
+    stage_id: int
+    reason: str
+    marked_by_user_id: int
+    marked_at: Optional[datetime]
+
     class Config:
         from_attributes = True
 
@@ -159,6 +171,11 @@ class JobCardResponse(JobCardBase):
         from_attributes = True
 
 
+class JobCardNotApplicableStageCreate(BaseModel):
+    stage_id: int
+    reason: str
+
+
 # CaptureEvent schemas
 class CaptureEventBase(BaseModel):
     stage_id: int
@@ -194,6 +211,10 @@ class CaptureEventResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+
+class CaptureEventVoidRequest(BaseModel):
+    reason: str
 
 
 class OverrideRequestCreate(BaseModel):

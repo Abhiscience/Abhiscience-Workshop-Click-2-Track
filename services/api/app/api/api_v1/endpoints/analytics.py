@@ -63,7 +63,7 @@ async def get_live_workshop_status(
     exit_result = await db.execute(exit_stage_stmt)
     exit_stages = {s.stage_id for s in exit_result.scalars().all()}
 
-    # Latest capture event per job_card / pending_vehicle
+    # Latest capture event per job_card / pending_vehicle (exclude cancelled and voided)
     latest_events_sub = (
         select(
             CaptureEvent.job_card_id,
@@ -71,6 +71,9 @@ async def get_live_workshop_status(
             func.max(CaptureEvent.received_at_server).label("latest_time")
         )
         .where(or_(CaptureEvent.job_card_id.isnot(None), CaptureEvent.pending_vehicle_ref.isnot(None)))
+        .where(CaptureEvent.voided == False)
+        .outerjoin(JobCard, CaptureEvent.job_card_id == JobCard.job_card_id)
+        .where(or_(CaptureEvent.job_card_id.is_(None), JobCard.status != "CANCELLED"))
         .group_by(CaptureEvent.job_card_id, CaptureEvent.pending_vehicle_ref)
         .subquery()
     )
@@ -164,12 +167,17 @@ async def get_utilization_metrics(
     stage_by_id = {s.stage_id: s for s in stages}
     stage_by_code = {s.stage_code: s for s in stages}
 
-    # Fetch capture events for target date
+    # Fetch capture events for target date, excluding captures from CANCELLED job cards
     event_stmt = select(CaptureEvent, WorkflowStage).outerjoin(
         WorkflowStage, CaptureEvent.stage_id == WorkflowStage.stage_id
+    ).outerjoin(
+        JobCard, CaptureEvent.job_card_id == JobCard.job_card_id
     ).where(
         CaptureEvent.received_at_server >= start,
-        CaptureEvent.received_at_server < end
+        CaptureEvent.received_at_server < end,
+        or_(CaptureEvent.job_card_id.is_(None), JobCard.status != "CANCELLED")
+    ).where(
+        CaptureEvent.voided == False
     )
     if branch_id:
         event_stmt = event_stmt.where(WorkflowStage.branch_id == branch_id)
@@ -367,7 +375,12 @@ async def get_deviation_summary(
 
     event_stmt = select(CaptureEvent).where(
         CaptureEvent.received_at_server >= start,
-        CaptureEvent.received_at_server < end
+        CaptureEvent.received_at_server < end,
+        CaptureEvent.voided == False,
+    ).outerjoin(
+        JobCard, CaptureEvent.job_card_id == JobCard.job_card_id
+    ).where(
+        or_(CaptureEvent.job_card_id.is_(None), JobCard.status != "CANCELLED")
     ).order_by(CaptureEvent.received_at_server)
     event_result = await db.execute(event_stmt)
     events = event_result.scalars().all()

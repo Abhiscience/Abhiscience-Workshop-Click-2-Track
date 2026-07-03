@@ -78,6 +78,21 @@ class WorkflowStage(Base):
     role = relationship("Role")
     captures = relationship("CaptureEvent", back_populates="stage")
 
+class JobCardNotApplicableStage(Base):
+    """Per-job-card 'not applicable' stage marking (Part D)."""
+    __tablename__ = "job_card_not_applicable_stages"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    job_card_id = Column(Integer, ForeignKey("job_cards.job_card_id"), nullable=False)
+    stage_id = Column(Integer, ForeignKey("workflow_stages.stage_id"), nullable=False)
+    reason = Column(Text, nullable=False)
+    marked_by_user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
+    marked_at = Column(DateTime, default=datetime.utcnow)
+
+    job_card = relationship("JobCard", back_populates="not_applicable_stages")
+    stage = relationship("WorkflowStage")
+    marked_by = relationship("User")
+
 class Vehicle(Base):
     __tablename__ = "vehicles"
     
@@ -99,10 +114,15 @@ class JobCard(Base):
     branch_id = Column(Integer, ForeignKey("branches.branch_id"))
     advisor_id = Column(Integer, ForeignKey("users.user_id"), nullable=True)
     status = Column(String(50), default="OPEN")
+    cancellation_reason = Column(Text, nullable=True)
     open_time = Column(DateTime)
     close_time = Column(DateTime, nullable=True)
     
     vehicle = relationship("Vehicle", back_populates="job_cards")
+    branch = relationship("Branch", back_populates="job_cards")
+    advisor = relationship("User")
+    capture_events = relationship("CaptureEvent", back_populates="job_card")
+    not_applicable_stages = relationship("JobCardNotApplicableStage", back_populates="job_card")
 
 class CaptureEvent(Base):
     __tablename__ = "capture_events"
@@ -132,9 +152,15 @@ class CaptureEvent(Base):
     geo_lng = Column(Float, nullable=True)
     remarks = Column(Text, nullable=True)
     work_done_category_id = Column(Integer, ForeignKey("job_categories.job_category_id"), nullable=True)
+    voided = Column(Boolean, default=False)          # Part D: correction mechanism
+    voided_at = Column(DateTime, nullable=True)
+    voided_by = Column(Integer, ForeignKey("users.user_id"), nullable=True)
+    void_reason = Column(Text, nullable=True)
+    corrected_event_id = Column(Integer, ForeignKey("capture_events.event_id"), nullable=True)
     
     stage = relationship("WorkflowStage")
     user = relationship("User")
+    corrected_event = relationship("CaptureEvent", remote_side=[event_id], uselist=False)
     work_done_category = relationship("JobCategory", back_populates="captures")
 
 class PendingVehicle(Base):
@@ -195,5 +221,3 @@ class OverrideRequest(Base):
     job_card = relationship("JobCard")
     vehicle = relationship("Vehicle")
     resolved_event = relationship("CaptureEvent")
-
-

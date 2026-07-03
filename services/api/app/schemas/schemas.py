@@ -110,6 +110,27 @@ class CaptureEvent(CaptureEventBase):
 
 
 # Override request schemas
+class CaptureEventVoidRequest(BaseModel):
+    reason: str
+
+
+class JobCardNotApplicableStageCreate(BaseModel):
+    stage_id: int
+    reason: str
+
+
+class JobCardNotApplicableStageResponse(BaseModel):
+    id: int
+    job_card_id: int
+    stage_id: int
+    reason: str
+    marked_by_user_id: int
+    marked_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+
 class OverrideRequestCreate(BaseModel):
     stage_id: int
     reason: str

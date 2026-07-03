@@ -9,8 +9,8 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.models.models import CaptureEvent, MatchStatus, PendingVehicle, WorkflowStage, JobCategory, User, AppInstallation, Role, OverrideRequest, OverrideRequestStatus
-from app.schemas.schemas import CaptureEventCreate, CaptureEvent as CaptureEventSchema, OverrideRequestCreate, OverrideRequestResponse
+from app.models.models import CaptureEvent, LinkStatus, MatchStatus, PendingVehicle, WorkflowStage, JobCategory, User, AppInstallation, Role, OverrideRequest, OverrideRequestStatus, JobCard, Vehicle
+from app.schemas.schemas import CaptureEventCreate, CaptureEvent as CaptureEventSchema, OverrideRequestCreate, OverrideRequestResponse, CaptureEventVoidRequest
 from app.core.security import decode_token
 from app.providers.ocr_provider import get_ocr_provider
 from app.providers.anpr_provider import normalize_plate
@@ -20,6 +20,11 @@ from app.services.push_service import (
 )
 
 router = APIRouter()
+
+
+def _match_status_value(ms):
+    return ms.value if hasattr(ms, "value") else str(ms)
+
 
 async def get_current_user(request: Request) -> dict:
     """Extract and verify JWT token from header."""
@@ -67,34 +72,34 @@ def _is_role_allowed(user: User, stage: WorkflowStage) -> bool:
         return True
     return user.role_id == stage.role_id
 
+
 @router.post("/", response_model=CaptureEventSchema)
 async def create_capture(
     stage_id: str,
     remarks: str = None,
     work_done_category_id: int = None,
-    image: UploadFile = File(None),
+    image: UploadFile = File(...),  # Part D: mandatory image
     plate_text: str = None,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Create a new capture event with optional image."""
+    """Create a new capture event. An uploaded image is mandatory."""
     user, stage = await _resolve_user_and_stage(db, current_user, int(stage_id))
+
+    if not image or getattr(image, "filename", "") == "":
+        raise HTTPException(status_code=400, detail="A photo is required for every capture")
 
     if not _is_role_allowed(user, stage):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                "This stage is role-locked. Submit an override request with reason."
-            ),
+            detail="This stage is role-locked. Submit an override request with reason."
         )
 
-    # Work-Finished stage requires both a photo and a work-done category selection
+    # Work-Finished stage additionally requires a work-done category selection
     is_work_finished = (stage.sequence_order == 6) or (stage.stage_code == "WORK_FINISHED")
-    if is_work_finished:
-        if not image or getattr(image, 'filename', '') == '':
-            raise HTTPException(status_code=400, detail="Work-Finished capture requires a photo")
-        if not work_done_category_id:
-            raise HTTPException(status_code=400, detail="Work-Finished capture requires a work-done category")
+    if is_work_finished and not work_done_category_id:
+        raise HTTPException(status_code=400, detail="Work-Finished capture requires a work-done category")
+    if work_done_category_id:
         cat_result = await db.execute(
             select(JobCategory).where(
                 (JobCategory.job_category_id == work_done_category_id) &
@@ -105,24 +110,15 @@ async def create_capture(
         if not cat_result.scalars().first():
             raise HTTPException(status_code=400, detail="Invalid work-done category")
 
-    image_url = None
-    image_hash = None
-    ocr_plate = plate_text
-    ocr_confidence = 0.95
+    image_bytes, image_url, image_hash = await _store_upload_image(image)
+    ocr_result = await _perform_plate_ocr(image_bytes, getattr(image, "filename", ""), plate_text)
 
-    if image and getattr(image, 'filename', ''):
-        import uuid as _uuid, hashlib
-        image_bytes = await image.read()
-        image_hash = hashlib.md5(image_bytes).hexdigest()
-        image_url = f"/uploads/{_uuid.uuid4()}.jpg"
-        try:
-            provider = get_ocr_provider()
-            result = await provider.recognize_plate(image_bytes, image.filename or "capture.jpg")
-            if result.get("success") and result.get("plate_text_raw"):
-                ocr_plate = result["plate_text_raw"]
-                ocr_confidence = result["confidence"]
-        except Exception as e:
-            print(f"OCR error: {e}")
+    normalized_plate = normalize_plate(ocr_result["plate_text"]) if ocr_result.get("plate_text") else None
+
+    # Attempt auto-link for gate entries or any event with a normalized plate.
+    match_status, match_method, job_card_id, vehicle_id, pending_vehicle_ref = await _auto_link_event(
+        db, normalized_plate, stage
+    )
 
     event = CaptureEvent(
         stage_id=int(stage_id),
@@ -130,10 +126,14 @@ async def create_capture(
         installation_id=1,
         image_url=image_url,
         image_hash=image_hash,
-        plate_text_raw=ocr_plate,
-        plate_text_normalized=normalize_plate(ocr_plate) if ocr_plate else None,
-        plate_confidence=ocr_confidence,
-        match_status=(MatchStatus.PENDING_NO_JC.value if hasattr(MatchStatus.PENDING_NO_JC, "value") else str(MatchStatus.PENDING_NO_JC)),
+        plate_text_raw=ocr_result.get("plate_text"),
+        plate_text_normalized=normalized_plate,
+        plate_confidence=ocr_result.get("confidence", 0.95),
+        job_card_id=job_card_id,
+        vehicle_id=vehicle_id,
+        pending_vehicle_ref=pending_vehicle_ref,
+        match_status=match_status,
+        match_method=match_method,
         captured_at_device=datetime.utcnow(),
         remarks=remarks,
         work_done_category_id=work_done_category_id,
@@ -146,32 +146,6 @@ async def create_capture(
     return event
 
 
-async def _store_upload_image(image: UploadFile) -> tuple:
-    """Persist an uploaded image and return (image_bytes, image_url, image_hash)."""
-    if not image or getattr(image, "filename", "") == "":
-        return None, None, None
-    import hashlib
-    image_bytes = await image.read()
-    image_hash = hashlib.md5(image_bytes).hexdigest()
-    image_url = f"/uploads/{uuid.uuid4()}.jpg"
-    # TODO: write image_bytes to persistent storage; URL is currently virtual.
-    return image_bytes, image_url, image_hash
-
-
-async def _perform_plate_ocr(image_bytes: bytes | None, filename: str, plate_text: str | None) -> dict:
-    """Run OCR when an image is provided."""
-    if image_bytes is None:
-        return {"plate_text": plate_text, "confidence": 0.95}
-    try:
-        provider = get_ocr_provider()
-        result = await provider.recognize_plate(image_bytes, filename or "capture.jpg")
-        if result.get("success") and result.get("plate_text_raw"):
-            return {"plate_text": result["plate_text_raw"], "confidence": result.get("confidence", 0.95)}
-    except Exception as exc:
-        print(f"OCR error: {exc}")
-    return {"plate_text": plate_text, "confidence": 0.95}
-
-
 @router.post("/override-request", response_model=OverrideRequestResponse)
 async def submit_override_request(
     stage_id: str,
@@ -181,7 +155,7 @@ async def submit_override_request(
     plate_text: str = None,
     remarks: str = None,
     work_done_category_id: int = None,
-    image: UploadFile = File(None),
+    image: UploadFile = File(...),  # Part D: mandatory image even for override requests
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -193,6 +167,9 @@ async def submit_override_request(
     """
     if not reason or not reason.strip():
         raise HTTPException(status_code=400, detail="reason is required")
+
+    if not image or getattr(image, "filename", "") == "":
+        raise HTTPException(status_code=400, detail="A photo is required for every override request")
 
     user, stage = await _resolve_user_and_stage(db, current_user, int(stage_id))
     if not stage.allow_override:
@@ -214,9 +191,9 @@ async def submit_override_request(
     request_data = {
         "image_url": image_url,
         "image_hash": image_hash,
-        "plate_text_raw": ocr_result["plate_text"],
-        "plate_text_normalized": normalize_plate(ocr_result["plate_text"]) if ocr_result["plate_text"] else None,
-        "plate_confidence": ocr_result["confidence"],
+        "plate_text_raw": ocr_result.get("plate_text"),
+        "plate_text_normalized": normalize_plate(ocr_result["plate_text"]) if ocr_result.get("plate_text") else None,
+        "plate_confidence": ocr_result.get("confidence", 0.95),
         "remarks": remarks,
         "work_done_category_id": work_done_category_id,
         "requester_role_id": user.role_id,
@@ -285,24 +262,201 @@ async def submit_override_request(
     return override
 
 
-@router.get("/")
+async def _store_upload_image(image: UploadFile) -> tuple:
+    """Persist an uploaded image and return (image_bytes, image_url, image_hash)."""
+    if not image or getattr(image, "filename", "") == "":
+        return None, None, None
+    import hashlib
+    image_bytes = await image.read()
+    image_hash = hashlib.md5(image_bytes).hexdigest()
+    image_url = f"/uploads/{uuid.uuid4()}.jpg"
+    # TODO: write image_bytes to persistent storage; URL is currently virtual.
+    return image_bytes, image_url, image_hash
+
+
+async def _perform_plate_ocr(image_bytes: bytes | None, filename: str, plate_text: str | None) -> dict:
+    """Run OCR when an image is provided."""
+    if image_bytes is None:
+        return {"plate_text": plate_text, "confidence": 0.95}
+    try:
+        provider = get_ocr_provider()
+        result = await provider.recognize_plate(image_bytes, filename or "capture.jpg")
+        if result.get("success") and result.get("plate_text_raw"):
+            return {"plate_text": result["plate_text_raw"], "confidence": result.get("confidence", 0.95)}
+    except Exception as exc:
+        print(f"OCR error: {exc}")
+    return {"plate_text": plate_text, "confidence": 0.95}
+
+
+async def _auto_link_event(
+    db: AsyncSession,
+    normalized_plate: Optional[str],
+    stage: WorkflowStage
+):
+    """Attempt to auto-link a capture to a vehicle / job card / pending_vehicle.
+
+    Returns: (match_status, match_method, job_card_id, vehicle_id, pending_vehicle_ref)
+    """
+    if not normalized_plate:
+        return _match_status_value(MatchStatus.PENDING_NO_JC), None, None, None, None
+
+    # 1) Existing vehicle exact match
+    vehicle_result = await db.execute(
+        select(Vehicle).where(Vehicle.registration_number == normalized_plate)
+    )
+    vehicle = vehicle_result.scalar_one_or_none()
+    if vehicle:
+        # Find an open job card for this vehicle
+        jc_result = await db.execute(
+            select(JobCard)
+            .where(
+                JobCard.vehicle_id == vehicle.vehicle_id,
+                JobCard.status.notin_(["COMPLETED", "CLOSED", "CANCELLED"]),
+            )
+            .order_by(JobCard.open_time.desc())
+        )
+        job_card = jc_result.scalars().first()
+        if job_card:
+            return _match_status_value(MatchStatus.EXACT_MATCH), "exact", job_card.job_card_id, vehicle.vehicle_id, None
+        return _match_status_value(MatchStatus.NORMALIZED_MATCH), "vehicle_only", None, vehicle.vehicle_id, None
+
+    # 2) Pending vehicle created by Security Gate Check
+    pending_result = await db.execute(
+        select(PendingVehicle).where(
+            PendingVehicle.temporary_plate_text == normalized_plate,
+            PendingVehicle.branch_id == stage.branch_id,
+            PendingVehicle.link_status != LinkStatus.LINKED.value,
+        )
+    )
+    pending = pending_result.scalars().first()
+    if pending:
+        pending.link_status = LinkStatus.LINKED.value
+        return _match_status_value(MatchStatus.NORMALIZED_MATCH), "pending_vehicle", None, None, pending.pending_vehicle_ref
+
+    return _match_status_value(MatchStatus.PENDING_NO_JC), None, None, None, None
+
+
 @router.get("/")
 async def list_captures(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """List capture events for current user."""
-    from sqlalchemy.future import select
     result = await db.execute(select(CaptureEvent).order_by(CaptureEvent.event_id.desc()).limit(50))
     events = result.scalars().all()
     return {"events": [{"event_id": e.event_id, "plate_text_raw": e.plate_text_raw, "plate_text_normalized": e.plate_text_normalized, "match_status": e.match_status.value if hasattr(e.match_status, 'value') else e.match_status, "captured_at_device": str(e.captured_at_device), "stage_id": e.stage_id} for e in events]}
+
+
+@router.post("/{event_id}/void")
+async def void_capture_event(
+    event_id: str,
+    request: Request,
+    payload: CaptureEventVoidRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Void a capture event (wrong stage, wrong vehicle, etc.) preserving audit trail.
+
+    The original record remains in the database with voided=True and void_reason.
+    A corrected replacement can optionally be supplied in the same request.
+    """
+    from app.services.void_capture_service import void_capture, create_correction_capture
+
+    event_result = await db.execute(select(CaptureEvent).where(CaptureEvent.event_id == int(event_id)))
+    event = event_result.scalar_one_or_none()
+    if not event:
+        raise HTTPException(status_code=404, detail="Capture event not found")
+    if event.voided:
+        raise HTTPException(status_code=400, detail="Capture event is already voided")
+
+    corrected_event = None
+    if request.headers.get("X-Correction") == "true":
+        body = await request.json()
+        correction_body = body.get("correction", {})
+        # Basic validation: require stage_id
+        if "stage_id" not in correction_body:
+            raise HTTPException(status_code=400, detail="correction.stage_id is required")
+        correction_data = {
+            "stage_id": int(correction_body["stage_id"]),
+            "user_id": current_user["user_id"],
+            "installation_id": event.installation_id,
+            "job_card_id": correction_body.get("job_card_id", event.job_card_id),
+            "vehicle_id": correction_body.get("vehicle_id", event.vehicle_id),
+            "pending_vehicle_ref": correction_body.get("pending_vehicle_ref", event.pending_vehicle_ref),
+            "remarks": correction_body.get("remarks", event.remarks),
+            "match_status": _match_status_value(MatchStatus.MANUAL_CONFIRMED),
+            "match_method": "manual_correction",
+        }
+        corrected_event = await create_correction_capture(db, event.event_id, correction_data)
+
+    await void_capture(
+        db,
+        event_id=event.event_id,
+        voided_by_user_id=current_user["user_id"],
+        reason=payload.reason,
+        corrected_event_id=corrected_event.event_id if corrected_event else None,
+    )
+    await db.commit()
+    await db.refresh(event)
+
+    return {
+        "event_id": event.event_id,
+        "voided": event.voided,
+        "void_reason": event.void_reason,
+        "voided_at": event.voided_at.isoformat() if event.voided_at else None,
+        "corrected_event_id": event.corrected_event_id,
+    }
+
 
 @router.post("/{event_id}/confirm-match")
 async def confirm_match(
     event_id: str,
     job_card_id: str = None,
+    vehicle_id: str = None,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Confirm match between capture and job card."""
-    return {"status": "matched", "job_card_id": job_card_id}
+    """Confirm or correct match between a capture and a job card / vehicle.
+
+    This is the manual override endpoint for cases where plate OCR misread or
+    auto-match failed. It can also be used if Security created a pending_vehicle
+    and the real vehicle/job card is now known.
+    """
+    event_result = await db.execute(select(CaptureEvent).where(CaptureEvent.event_id == int(event_id)))
+    event = event_result.scalar_one_or_none()
+    if not event:
+        raise HTTPException(status_code=404, detail="Capture event not found")
+
+    if job_card_id:
+        jc_result = await db.execute(select(JobCard).where(JobCard.job_card_id == int(job_card_id)))
+        job_card = jc_result.scalar_one_or_none()
+        if not job_card:
+            raise HTTPException(status_code=404, detail="Job card not found")
+        event.job_card_id = job_card.job_card_id
+        event.vehicle_id = job_card.vehicle_id
+        event.pending_vehicle_ref = None
+        event.match_status = _match_status_value(MatchStatus.MANUAL_CONFIRMED)
+        event.match_method = "manual_job_card"
+    elif vehicle_id:
+        v_result = await db.execute(select(Vehicle).where(Vehicle.vehicle_id == int(vehicle_id)))
+        vehicle = v_result.scalar_one_or_none()
+        if not vehicle:
+            raise HTTPException(status_code=404, detail="Vehicle not found")
+        event.vehicle_id = vehicle.vehicle_id
+        event.job_card_id = None
+        event.pending_vehicle_ref = None
+        event.match_status = _match_status_value(MatchStatus.MANUAL_CONFIRMED)
+        event.match_method = "manual_vehicle"
+    else:
+        raise HTTPException(status_code=400, detail="Provide either job_card_id or vehicle_id")
+
+    await db.commit()
+    await db.refresh(event)
+    return {
+        "status": "matched",
+        "event_id": event.event_id,
+        "job_card_id": event.job_card_id,
+        "vehicle_id": event.vehicle_id,
+        "match_status": event.match_status,
+        "match_method": event.match_method,
+    }

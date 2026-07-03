@@ -67,10 +67,26 @@ class WorkflowStage(Base):
     capture_mandatory = Column(Boolean, default=False)
     role_id = Column(Integer, ForeignKey("roles.role_id"), nullable=True)
     allow_override = Column(Boolean, default=True)
-    skip_deviation = Column(Boolean, default=False)  # Part D: "not applicable" stages    
+    skip_deviation = Column(Boolean, default=False)  # Part D: "not applicable" stages
     branch = relationship("Branch", back_populates="workflow_stages")
     role = relationship("Role", back_populates="workflow_stages", uselist=False)
     capture_events = relationship("CaptureEvent", back_populates="stage")
+
+
+class JobCardNotApplicableStage(Base):
+    """Per-job-card 'not applicable' stage marking (Part D)."""
+    __tablename__ = "job_card_not_applicable_stages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_card_id = Column(Integer, ForeignKey("job_cards.job_card_id"), nullable=False)
+    stage_id = Column(Integer, ForeignKey("workflow_stages.stage_id"), nullable=False)
+    reason = Column(Text, nullable=False)
+    marked_by_user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
+    marked_at = Column(DateTime, default=datetime.utcnow)
+
+    job_card = relationship("JobCard", back_populates="not_applicable_stages")
+    stage = relationship("WorkflowStage")
+    marked_by = relationship("User")
 
 
 class User(Base):
@@ -128,6 +144,7 @@ class JobCard(Base):
     branch_id = Column(Integer, ForeignKey("branches.branch_id"), nullable=False)
     advisor_id = Column(Integer, ForeignKey("users.user_id"), nullable=True)
     status = Column(String(50), default="open")
+    cancellation_reason = Column(Text, nullable=True)
     open_time = Column(DateTime, default=datetime.utcnow)
     close_time = Column(DateTime, nullable=True)
     
@@ -135,6 +152,7 @@ class JobCard(Base):
     branch = relationship("Branch", back_populates="job_cards")
     advisor = relationship("User", back_populates="job_cards", uselist=False)
     capture_events = relationship("CaptureEvent", back_populates="job_card")
+    not_applicable_stages = relationship("JobCardNotApplicableStage", back_populates="job_card")
 
 
 # Add back-reference to User for JobCard.advisor
@@ -164,6 +182,12 @@ class CaptureEvent(Base):
     geo_lng = Column(Float, nullable=True)
     remarks = Column(Text, nullable=True)
     work_done_category_id = Column(Integer, ForeignKey("job_categories.job_category_id"), nullable=True)
+    voided = Column(Boolean, default=False)
+    voided_at = Column(DateTime, nullable=True)
+    voided_by = Column(Integer, ForeignKey("users.user_id"), nullable=True)
+    void_reason = Column(Text, nullable=True)
+    corrected_event_id = Column(Integer, ForeignKey("capture_events.event_id"), nullable=True)
+
     job_card = relationship("JobCard", back_populates="capture_events")
     work_done_category = relationship("JobCategory", back_populates="captures")
     vehicle = relationship("Vehicle", back_populates="capture_events")
@@ -171,6 +195,7 @@ class CaptureEvent(Base):
     stage = relationship("WorkflowStage", back_populates="capture_events")
     user = relationship("User", back_populates="capture_events")
     installation = relationship("AppInstallation", back_populates="capture_events")
+    corrected_event = relationship("CaptureEvent", remote_side=[event_id], uselist=False)
 
 
 class JobCategory(Base):
