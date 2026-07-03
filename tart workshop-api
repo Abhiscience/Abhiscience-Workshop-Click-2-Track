@@ -1,0 +1,27 @@
+[33mcommit 91013fb9afcb8e8d6be2f2dfee6cf046de86f2d6[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m
+Author: Your Name <you@example.com>
+Date:   Fri Jul 3 20:24:00 2026 +0000
+
+    Remove duplicate shadow folders app/models/models/ and app/api/api/
+
+ services/api/app/api/api/endpoints/__init__.py     |   1 [31m-[m
+ .../endpoints/__pycache__/admin.cpython-313.pyc    | Bin [31m7815[m -> [32m0[m bytes
+ .../__pycache__/analytics.cpython-313.pyc          | Bin [31m3089[m -> [32m0[m bytes
+ .../api/endpoints/__pycache__/auth.cpython-313.pyc | Bin [31m5099[m -> [32m0[m bytes
+ .../endpoints/__pycache__/captures.cpython-313.pyc | Bin [31m15276[m -> [32m0[m bytes
+ .../__pycache__/job_cards.cpython-313.pyc          | Bin [31m6913[m -> [32m0[m bytes
+ .../__pycache__/pending_vehicles.cpython-313.pyc   | Bin [31m5794[m -> [32m0[m bytes
+ .../endpoints/__pycache__/vehicles.cpython-313.pyc | Bin [31m4986[m -> [32m0[m bytes
+ services/api/app/api/api/endpoints/admin.py        | 227 [31m-------------[m
+ services/api/app/api/api/endpoints/analytics.py    |  49 [31m---[m
+ services/api/app/api/api/endpoints/auth.py         | 111 [31m-------[m
+ services/api/app/api/api/endpoints/captures.py     | 324 [31m------------------[m
+ services/api/app/api/api/endpoints/job_cards.py    | 130 [31m--------[m
+ .../api/app/api/api/endpoints/pending_vehicles.py  | 113 [31m-------[m
+ services/api/app/api/api/endpoints/vehicles.py     | 100 [31m------[m
+ services/api/app/api/api/schemas/__init__.py       |   1 [31m-[m
+ .../schemas/__pycache__/schemas.cpython-313.pyc    | Bin [31m12327[m -> [32m0[m bytes
+ services/api/app/api/api/schemas/schemas.py        | 365 [31m---------------------[m
+ services/api/app/models/models/__init__.py         |  29 [31m--[m
+ services/api/app/models/models/models.py           | 249 [31m--------------[m
+ 20 files changed, 1699 deletions(-)
