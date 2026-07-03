@@ -194,22 +194,48 @@ async def get_utilization_metrics(
             x[0].received_at_server or datetime.min
         ))
 
-        timestamps = {}
-        for event, stage in evs:
-            if stage:
-                timestamps[stage.stage_code] = event.received_at_server
+        # Generic time-gap logic based on sequence_order, not hardcoded stage codes
+        ordered_captures = [(event, stage) for event, stage in evs if stage and stage.sequence_order is not None]
+        if not ordered_captures:
+            continue
 
-        gate_time = timestamps.get("GATE_ENTRY") or timestamps.get("GATE_IN")
-        advisor_time = timestamps.get("ADVISOR_RECEIPT") or timestamps.get("ADVISOR") or timestamps.get("RECEPTION")
-        tech_time = timestamps.get("TECH_ACCEPT") or timestamps.get("TECHNICIAN") or timestamps.get("BAY_ALLOCATION")
-        exit_time = timestamps.get("GATE_EXIT") or timestamps.get("EXIT") or timestamps.get("QC_DONE")
+        timestamps_by_seq = {stage.sequence_order: event.received_at_server for event, stage in ordered_captures}
+        sorted_seqs = sorted(timestamps_by_seq.keys())
 
-        if gate_time and advisor_time and advisor_time > gate_time:
-            gate_to_advisor_times.append((advisor_time - gate_time).total_seconds() / 60.0)
-        if advisor_time and tech_time and tech_time > advisor_time:
-            advisor_to_technician_times.append((tech_time - advisor_time).total_seconds() / 60.0)
-        if gate_time and exit_time and exit_time > gate_time:
-            turnaround_times.append((exit_time - gate_time).total_seconds() / 60.0)
+        # Gate -> Advisor: first captured stage to second captured stage
+        if len(sorted_seqs) >= 2:
+            t_gate = timestamps_by_seq.get(sorted_seqs[0])
+            t_advisor = timestamps_by_seq.get(sorted_seqs[1])
+            if t_gate and t_advisor and t_advisor > t_gate:
+                gate_to_advisor_times.append((t_advisor - t_gate).total_seconds() / 60.0)
+
+        # Advisor -> Technician: second captured stage to the first TECHNICIAN-related stage
+        if len(sorted_seqs) >= 2:
+            advisor_seq = sorted_seqs[1]
+            advisor_time = timestamps_by_seq.get(advisor_seq)
+            tech_time = None
+            for seq in sorted_seqs:
+                if seq <= advisor_seq:
+                    continue
+                ev_stage = next((stage for event, stage in ordered_captures if stage.sequence_order == seq), None)
+                if ev_stage and ev_stage.role_id:
+                    role_name = None
+                    if hasattr(ev_stage, 'role') and ev_stage.role:
+                        role_name = ev_stage.role.role_name
+                    if role_name == "TECHNICIAN":
+                        tech_time = timestamps_by_seq.get(seq)
+                        break
+            if not tech_time and len(sorted_seqs) >= 4:
+                tech_time = timestamps_by_seq.get(sorted_seqs[3])
+            if advisor_time and tech_time and tech_time > advisor_time:
+                advisor_to_technician_times.append((tech_time - advisor_time).total_seconds() / 60.0)
+
+        # Total turnaround: first captured stage to final captured stage
+        if len(sorted_seqs) >= 2:
+            first_time = timestamps_by_seq.get(sorted_seqs[0])
+            last_time = timestamps_by_seq.get(sorted_seqs[-1])
+            if first_time and last_time and last_time > first_time:
+                turnaround_times.append((last_time - first_time).total_seconds() / 60.0)
 
     # Compliance: % of mandatory stages that have a capture event per job card
     mandatory_stages = [s for s in stages if s.capture_mandatory]

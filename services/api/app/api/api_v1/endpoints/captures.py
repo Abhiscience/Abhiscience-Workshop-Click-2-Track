@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 
 from app.core.database import get_db
-from app.models.models import CaptureEvent, MatchStatus, PendingVehicle
+from app.models.models import CaptureEvent, MatchStatus, PendingVehicle, WorkflowStage, JobCategory
 from app.schemas.schemas import CaptureEventCreate, CaptureEvent as CaptureEventSchema
 from app.core.security import decode_token
 from app.providers.ocr_provider import get_ocr_provider
@@ -35,18 +35,43 @@ async def get_current_user(request: Request) -> dict:
 async def create_capture(
     stage_id: str,
     remarks: str = None,
+    work_done_category_id: int = None,
     image: UploadFile = File(None),
     plate_text: str = None,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Create a new capture event with optional image."""
+    from sqlalchemy.future import select
+
+    # Resolve stage
+    stage_result = await db.execute(select(WorkflowStage).where(WorkflowStage.stage_id == int(stage_id)))
+    stage = stage_result.scalar_one_or_none()
+    if not stage:
+        raise HTTPException(status_code=400, detail="Invalid stage_id")
+
+    # Work-Finished stage (sequence_order == 6) requires both image and work-done category
+    if stage.sequence_order == 6:
+        if not image or getattr(image, 'filename', '') == '':
+            raise HTTPException(status_code=400, detail="Work-Finished capture requires a photo")
+        if not work_done_category_id:
+            raise HTTPException(status_code=400, detail="Work-Finished capture requires a work-done category")
+        cat_result = await db.execute(
+            select(JobCategory).where(
+                (JobCategory.job_category_id == work_done_category_id) &
+                ((JobCategory.branch_id == stage.branch_id) | (JobCategory.branch_id.is_(None))) &
+                (JobCategory.is_active == True)
+            )
+        )
+        if not cat_result.scalars().first():
+            raise HTTPException(status_code=400, detail="Invalid work-done category")
+
     image_url = None
     image_hash = None
     ocr_plate = plate_text
     ocr_confidence = 0.95
 
-    if image:
+    if image and getattr(image, 'filename', ''):
         import uuid as _uuid, hashlib
         image_bytes = await image.read()
         image_hash = hashlib.md5(image_bytes).hexdigest()
@@ -71,7 +96,8 @@ async def create_capture(
         plate_confidence=ocr_confidence,
         match_status=MatchStatus.PENDING_NO_JC,
         captured_at_device=datetime.utcnow(),
-        remarks=remarks
+        remarks=remarks,
+        work_done_category_id=work_done_category_id,
     )
 
     db.add(event)
@@ -80,6 +106,8 @@ async def create_capture(
 
     return event
 
+
+@router.get("/")
 @router.get("/")
 async def list_captures(
     current_user: dict = Depends(get_current_user),

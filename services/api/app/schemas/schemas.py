@@ -88,6 +88,7 @@ class CaptureEventBase(BaseModel):
 class CaptureEventCreate(CaptureEventBase):
     plate_text: Optional[str]
     confidence: Optional[float]
+    work_done_category_id: Optional[int] = None
 
 class CaptureEvent(CaptureEventBase):
     event_id: int
@@ -152,3 +153,20 @@ class UtilizationMetrics(BaseModel):
     total_turnaround_minutes: float
     capture_compliance_percent: float
     bottleneck_stages: List[str]
+
+# Job Category schemas
+class JobCategoryBase(BaseModel):
+    branch_id: Optional[int] = None
+    category_name: str
+    category_code: Optional[str] = None
+    is_active: Optional[bool] = True
+
+class JobCategoryCreate(JobCategoryBase):
+    pass
+
+class JobCategory(JobCategoryBase):
+    job_category_id: int
+
+    class Config:
+        from_attributes = True
+

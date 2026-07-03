@@ -271,3 +271,128 @@ async def plate_ocr(file: UploadFile = File(...)):
     if not result.get("success") or not result.get("plate_text_raw"):
         raise HTTPException(status_code=422, detail=result.get("error", "No license plate detected"))
     return _parse_plate(result["plate_text_raw"])
+
+from app.models.models import Role, JobCategory
+
+
+@router.get("/roles")
+async def list_roles(
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all roles."""
+    result = await db.execute(select(Role).order_by(Role.role_name))
+    roles = result.scalars().all()
+    return {
+        "roles": [
+            {
+                "role_id": r.role_id,
+                "role_name": r.role_name,
+                "capture_label": r.capture_label,
+                "permissions": r.permissions,
+            }
+            for r in roles
+        ]
+    }
+
+
+@router.post("/roles")
+async def create_role(
+    role_data: dict,
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new role."""
+    if not role_data.get("role_name"):
+        raise HTTPException(status_code=400, detail="role_name is required")
+    existing = await db.execute(select(Role).where(Role.role_name == role_data["role_name"]))
+    if existing.scalars().first():
+        raise HTTPException(status_code=400, detail="Role already exists")
+
+    role = Role(
+        role_name=role_data["role_name"],
+        capture_label=role_data.get("capture_label"),
+        permissions=role_data.get("permissions", {}),
+    )
+    db.add(role)
+    try:
+        await db.commit()
+        await db.refresh(role)
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail="Role could not be created")
+
+    return {
+        "status": "created",
+        "role": {
+            "role_id": role.role_id,
+            "role_name": role.role_name,
+            "capture_label": role.capture_label,
+            "permissions": role.permissions,
+        }
+    }
+
+
+@router.get("/job-categories")
+async def list_job_categories(
+    branch_id: int = None,
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """List job categories for dropdown."""
+    stmt = select(JobCategory)
+    if branch_id:
+        stmt = stmt.where(
+            (JobCategory.branch_id == branch_id) | (JobCategory.branch_id.is_(None))
+        )
+    stmt = stmt.where(JobCategory.is_active == True).order_by(JobCategory.category_name)
+    result = await db.execute(stmt)
+    categories = result.scalars().all()
+    return {
+        "categories": [
+            {
+                "job_category_id": c.job_category_id,
+                "branch_id": c.branch_id,
+                "category_name": c.category_name,
+                "category_code": c.category_code,
+                "is_active": c.is_active,
+            }
+            for c in categories
+        ]
+    }
+
+
+@router.post("/job-categories")
+async def create_job_category(
+    category_data: dict,
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new job category."""
+    if not category_data.get("category_name"):
+        raise HTTPException(status_code=400, detail="category_name is required")
+    category = JobCategory(
+        branch_id=category_data.get("branch_id"),
+        category_name=category_data["category_name"],
+        category_code=category_data.get("category_code"),
+        is_active=category_data.get("is_active", True),
+    )
+    db.add(category)
+    try:
+        await db.commit()
+        await db.refresh(category)
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail="Category could not be created")
+
+    return {
+        "status": "created",
+        "category": {
+            "job_category_id": category.job_category_id,
+            "branch_id": category.branch_id,
+            "category_name": category.category_name,
+            "category_code": category.category_code,
+            "is_active": category.is_active,
+        }
+    }
+
