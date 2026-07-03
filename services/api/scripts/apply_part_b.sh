@@ -8,11 +8,10 @@ cd services/api
 # Apply DB migration first.
 .venv/bin/python3 scripts/apply_part_b.py
 
-# Restart backend. Prefer PM2 if available; otherwise use the existing start script or uvicorn directly.
-if [ -f /root/start_api_server.sh ]; then
-  bash /root/start_api_server.sh
-  sleep 4
-elif command -v pm2 &>/dev/null; then
+# Restart backend via PM2 (the standalone start_api_server.sh path is
+# intentionally skipped here — it creates an orphaned process that
+# conflicts with PM2 on port 8000).
+if command -v pm2 &>/dev/null; then
   pm2 restart workshop-api || pm2 start .venv/bin/python3 --name workshop-api -- -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
   sleep 4
 else

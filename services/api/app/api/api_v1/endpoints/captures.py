@@ -41,7 +41,7 @@ async def get_current_user(request: Request) -> dict:
 async def _resolve_user_and_stage(db, current_user, stage_id):
     """Fetch the acting user and the target stage so the capture endpoint can
     enforce role-locked capture rules."""
-    user_result = await db.execute(select(User).where(User.user_id == current_user["user_id"]))
+    user_result = await db.execute(select(User).options(selectinload(User.role)).where(User.user_id == current_user["user_id"]))
     user = user_result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")

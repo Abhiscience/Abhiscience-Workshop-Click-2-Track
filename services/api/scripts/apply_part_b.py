@@ -11,7 +11,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import create_async_engine
 from app.core.config import settings
 from app.models.models import Base, OverrideRequest
@@ -30,7 +30,7 @@ async def main():
             cols = {c["name"] for c in inspector.get_columns("workflow_stages")}
             if "allow_override" not in cols:
                 sync_conn.execute(
-                    "ALTER TABLE workflow_stages ADD COLUMN allow_override BOOLEAN NOT NULL DEFAULT TRUE"
+                    text("ALTER TABLE workflow_stages ADD COLUMN allow_override BOOLEAN NOT NULL DEFAULT TRUE")
                 )
 
         await conn.run_sync(ensure_allow_override_column)
