@@ -155,10 +155,14 @@ class _StaffPerformanceService:
             regs = entry.get("vehicle_registration_set", set())
             vehicle_count = job_ids | regs
             return {
-                **{k: v for k, v in entry.items() if k not in ("job_card_ids", "vehicle_registration_set", "stage_breakdown")},
+                "user_id": entry["user_id"],
+                "name": entry.get("user_name"),
+                "role_id": entry.get("role_id"),
+                "role_name": entry.get("role_name"),
+                "capture_count": entry.get("capture_count", 0),
                 "vehicles_handled_count": len(vehicle_count),
-                "unique_job_cards": len(job_ids),
-                "stage_breakdown": dict(entry["stage_breakdown"]),
+                "cumulative_technician_minutes": entry.get("technician_time_minutes", 0.0),
+                "rework_cycles_detected": entry.get("rework_cycle_count", 0),
             }
 
         users_out = [_finalise(e) for e in by_user.values()]
@@ -167,11 +171,15 @@ class _StaffPerformanceService:
 
         roles_out = []
         for r in by_role.values():
-            regs = r.pop("vehicle_registration_set", set())
-            job_ids = r.pop("job_card_ids", set())
-            r["vehicles_handled_count"] = len(job_ids | regs)
-            r["unique_job_cards"] = len(job_ids)
-            r["user_count"] = len(r.pop("user_ids", set()))
+            rid = r["role_id"]
+            role_users = [u for u in users_out if u["role_id"] == rid]
+            r.update({
+                "total_captures": r.pop("capture_count", 0),
+                "total_vehicles_handled_count": len(r.pop("job_card_ids", set()) | r.pop("vehicle_registration_set", set())),
+                "total_technician_minutes": sum(u["cumulative_technician_minutes"] for u in role_users),
+                "user_count": len(r.pop("user_ids", set())),
+                "users": role_users,
+            })
             roles_out.append(r)
 
         return {
