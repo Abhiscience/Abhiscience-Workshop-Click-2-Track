@@ -175,7 +175,7 @@ class _StaffPerformanceService:
             role_users = [u for u in users_out if u["role_id"] == rid]
             r.update({
                 "total_captures": r.pop("capture_count", 0),
-                "total_vehicles_handled_count": len(r.pop("job_card_ids", set()) | r.pop("vehicle_registration_set", set())),
+                "total_vehicles_handled": len(r.pop("job_card_ids", set()) | r.pop("vehicle_registration_set", set())),
                 "total_technician_minutes": sum(u["cumulative_technician_minutes"] for u in role_users),
                 "user_count": len(r.pop("user_ids", set())),
                 "users": role_users,
