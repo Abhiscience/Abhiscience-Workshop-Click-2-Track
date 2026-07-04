@@ -246,9 +246,10 @@ class _VehicleFlowDashboardService:
                 "role_name": s.role.role_name if s.role else None,
                 "vehicles": set(),
                 "capture_count": 0,
-                "avg_wait_minutes": 0.0,
                 "total_wait_minutes": 0.0,
                 "wait_samples": 0,
+                "max_wait_minutes": 0.0,
+                "vehicle_max_wait": {},
             }
             for s in stages
         }
@@ -268,6 +269,11 @@ class _VehicleFlowDashboardService:
                 if wait > 0:
                     flow_counts[stage.stage_id]["total_wait_minutes"] += wait
                     flow_counts[stage.stage_id]["wait_samples"] += 1
+                    current_max = flow_counts[stage.stage_id]["vehicle_max_wait"].get(key, 0.0)
+                    if wait > current_max:
+                        flow_counts[stage.stage_id]["vehicle_max_wait"][key] = wait
+                    if wait > flow_counts[stage.stage_id]["max_wait_minutes"]:
+                        flow_counts[stage.stage_id]["max_wait_minutes"] = wait
 
         stage_nodes = []
         for _, _, code, _ in expected_seq:
@@ -285,25 +291,38 @@ class _VehicleFlowDashboardService:
                 "role_name": data["role_name"],
                 "vehicle_count": len(data["vehicles"]),
                 "capture_count": data["capture_count"],
-                "avg_wait_since_entry_minutes": round(avg_wait, 1),
+                "avg_wait_minutes": round(avg_wait, 1),
+                "max_wait_minutes": round(data["max_wait_minutes"], 1),
+                "deviation_count": 0,
             })
+
+        # Deviation counts from Part C/D morning meeting for context.
+        from app.services.deviation_report_service import build_morning_meeting_report
+        deviation_report = await build_morning_meeting_report(db, start_dt.date(), branch_id)
+
+        # Count deviations per stage_id from the report.
+        stage_deviation_counts: Dict[int, int] = defaultdict(int)
+        for dev in deviation_report.get("deviations", []):
+            sid = dev.get("stage_id")
+            if sid:
+                stage_deviation_counts[sid] += 1
+
+        for node in stage_nodes:
+            node["deviation_count"] = stage_deviation_counts.get(node["stage_id"], 0)
 
         # Bottleneck rule: highest avg wait among stages with >0 captures.
         candidates = [n for n in stage_nodes if n["capture_count"] > 0]
         worst_bottleneck = None
         if candidates:
-            worst = max(candidates, key=lambda n: n["avg_wait_since_entry_minutes"])
+            worst = max(candidates, key=lambda n: n["avg_wait_minutes"])
             worst_bottleneck = {
+                "stage_id": worst["stage_id"],
                 "stage_code": worst["stage_code"],
                 "stage_name": worst["stage_name"],
-                "avg_wait_minutes": worst["avg_wait_since_entry_minutes"],
+                "avg_wait_minutes": worst["avg_wait_minutes"],
                 "vehicle_count": worst["vehicle_count"],
                 "reason": "Highest average time since first entry in the selected window.",
             }
-
-        # Deviation counts from Part C/D morning meeting for context.
-        from app.services.deviation_report_service import build_morning_meeting_report
-        deviation_report = await build_morning_meeting_report(db, start_dt.date(), branch_id)
 
         return {
             "period_start": start_dt.isoformat(),
@@ -311,12 +330,13 @@ class _VehicleFlowDashboardService:
             "branch_id": branch_id,
             "stages": stage_nodes,
             "worst_bottleneck": worst_bottleneck,
-            "total_deviations": deviation_report["summary"]["total_deviations"],
-            "vehicles_with_deviations": deviation_report["summary"]["vehicles_with_deviations"],
+            "at_risk_alerts": [],
             "deviation_summary_note": (
-                f"{deviation_report['summary']['total_deviations']} deviation(s) across "
-                f"{deviation_report['summary']['vehicles_with_deviations']} vehicle(s) in this period."
+                f"Total deviations {deviation_report['summary']['total_deviations']} "
+                f"across {deviation_report['summary']['vehicles_with_deviations']} vehicles "
+                f"in the selected window. See /dashboard/morning-meeting-deviations for details."
             ),
+            "_deviation_summary": deviation_report["summary"],
         }
 
 
