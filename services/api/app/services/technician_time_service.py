@@ -130,6 +130,7 @@ class _TechnicianTimeService:
                     cycles.append(current_cycle)
 
                 current_cycle = {
+                    "_raw_events": [event],
                     "cycle_number": len(cycles) + 1,
                     "started_at": ts,
                     "finished_at": None,
@@ -145,6 +146,7 @@ class _TechnicianTimeService:
             if current_cycle is None:
                 continue
 
+            current_cycle["_raw_events"].append(event)
             current_cycle["stage_events"].append(cls._stage_event_dict(event))
 
             if code in cls.CYCLE_END and current_cycle:
@@ -210,9 +212,7 @@ class _TechnicianTimeService:
 
     @classmethod
     def _finalize_cycle(cls, cycle: dict, all_events: List[CaptureEvent]):
-        cycle_events = [
-            e for e in cycle["stage_events"]
-        ]
+        cycle_events = cycle["_raw_events"]
         wait_minutes, wait_start, wait_end = cls._parts_wait_window_in_cycle(
             cycle_events, all_events
         )
@@ -227,6 +227,9 @@ class _TechnicianTimeService:
             cycle["total_minutes"] = round(cycle["total_minutes"], 2)
         else:
             cycle["net_work_minutes"] = None
+
+        # remove internal key before returning
+        cycle.pop("_raw_events", None)
 
     @classmethod
     def _compute_qc_waits(cls, events: List[CaptureEvent]) -> List[dict]:
