@@ -380,11 +380,11 @@ class _AtRiskAlertService:
                 "job_card_id": job_card.job_card_id,
                 "external_job_card_no": job_card.external_job_card_no,
                 "registration_number": vehicle.registration_number if vehicle else None,
+                "stage_code": None,
+                "stage_name": None,
                 "target_minutes": target,
-                "total_net_work_minutes": round(total_work, 2),
+                "actual_minutes": round(total_work, 2),
                 "excess_minutes": round(total_work - target, 2),
-                "excess_percent": round((total_work - target) / target * 100, 1),
-                "cycles": report.get("cycles", []),
             })
         return sorted(alerts, key=lambda a: a["excess_minutes"], reverse=True)
 
@@ -431,26 +431,35 @@ class _PartsShortageService:
             bucket["job_card_ids"].add(ev.job_card_id)
             if len(bucket["sample_remarks"]) < 5:
                 bucket["sample_remarks"].append(raw)
-            # Approximate wait: resolved later by work finished or cycle end.
-            # For trend analysis we use the service report; here we capture event-level metric.
-            bucket["total_wait_minutes"] += 0.0
 
         # Supplement with Part E cycle wait time per pattern key.
         # Simplification: total parts wait across matched job cards.
+        total_parts_wait_minutes = 0.0
         for key, bucket in buckets.items():
-            bucket["total_wait_minutes"] = await cls._estimate_wait_for_job_cards(
+            wait = await cls._estimate_wait_for_job_cards(
                 db, list(bucket["job_card_ids"])
             )
+            total_parts_wait_minutes += wait
+            bucket["total_wait_minutes"] = wait
             bucket["unique_job_cards"] = len(bucket["job_card_ids"])
             bucket["job_card_ids"] = list(bucket["job_card_ids"])
-            bucket.pop("total_wait_minutes")
 
-        sorted_patterns = sorted(buckets.values(), key=lambda b: b["occurrences"], reverse=True)[:20]
+        top_patterns = []
+        for bucket in sorted(buckets.values(), key=lambda b: b["occurrences"], reverse=True)[:20]:
+            top_patterns.append({
+                "pattern_key": bucket["pattern_key"],
+                "count": bucket["occurrences"],
+                "total_wait_minutes": bucket["total_wait_minutes"],
+                "sample_remarks": bucket["sample_remarks"],
+            })
+
         return {
             "period_start": start_dt.isoformat(),
             "period_end": end_dt.isoformat(),
+            "branch_id": branch_id,
             "total_parts_wait_events": len(events),
-            "top_patterns": sorted_patterns,
+            "total_parts_wait_minutes": round(total_parts_wait_minutes, 2),
+            "top_patterns": top_patterns,
         }
 
     @classmethod
@@ -521,13 +530,15 @@ class _StaffUtilizationService:
                 captures = act.capture_count
             results.append({
                 "user_id": shift.user_id,
-                "user_name": user.name if user else None,
+                "name": user.name if user else None,
                 "role_name": role.role_name if role else None,
                 "shift_date": shift.shift_date.isoformat(),
                 "shift_start": shift.shift_start.isoformat(),
                 "shift_end": shift.shift_end.isoformat(),
-                "shift_minutes": round(shift_minutes, 1),
-                "active_time_minutes": round(active_minutes, 1),
+                "shift_minutes": round((shift.shift_end - shift.shift_start).total_seconds() / 60.0, 1),
+                "break_minutes": shift.break_minutes,
+                "available_minutes": round(shift_minutes, 1),
+                "active_technician_minutes": round(active_minutes, 1),
                 "utilization_percent": round(active_minutes / shift_minutes * 100, 1) if shift_minutes else 0.0,
                 "capture_count": captures,
             })
@@ -596,14 +607,21 @@ class _ReworkRateReportService:
                     entry["rework_cycles"] += 1
 
         rows = sorted(technician_rework.values(), key=lambda x: x["rework_cycles"], reverse=True)
+        technicians = [
+            {
+                "user_id": r["user_id"],
+                "name": r["user_name"],
+                "rework_cycles": r["rework_cycles"],
+                "total_cycles": r["total_cycles"],
+                "rework_rate_percent": round(r["rework_cycles"] / r["total_cycles"] * 100, 1) if r["total_cycles"] else 0.0,
+            }
+            for r in rows
+        ]
+        total_rework_cycles = sum(t["rework_cycles"] for t in technicians)
         return {
             "period_start": start_dt.isoformat(),
             "period_end": end_dt.isoformat(),
-            "technicians": [
-                {
-                    **r,
-                    "rework_rate_percent": round(r["rework_cycles"] / r["total_cycles"] * 100, 1) if r["total_cycles"] else 0.0,
-                }
-                for r in rows
-            ],
+            "branch_id": branch_id,
+            "total_rework_cycles": total_rework_cycles,
+            "by_technician": technicians,
         }
