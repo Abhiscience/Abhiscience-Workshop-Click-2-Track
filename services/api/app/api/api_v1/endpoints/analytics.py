@@ -13,7 +13,7 @@ from app.schemas.schemas import (
 )
 from app.schemas.schemas_partf import (
     VehicleFlowResponse, StaffPerformanceResponse, StaffUtilizationRow,
-    PartsShortagePatterns, ReworkRateReport, AIActionPlanResponse,
+    PartsShortagePatterns, ReworkRateReport, AIActionPlanResponse, VehicleFlowAtRiskAlert,
 )
 from app.models.models import CaptureEvent, WorkflowStage, Vehicle, JobCard, User, Branch, PendingVehicle
 
@@ -423,16 +423,27 @@ async def vehicle_flow_dashboard(
     deviations flags, and current worst bottleneck callout. Filterable by date
     range for month-end review.
     """
-    from app.services.staff_performance_service import _StaffPerformanceService
+    from app.services.staff_performance_service import _VehicleFlowDashboardService
     end_dt = _parse_date(end_date) if end_date else datetime.utcnow().date()
     start_dt = _parse_date(start_date) if start_date else end_dt - timedelta(days=30)
     start = datetime.combine(start_dt, datetime.min.time())
     end = datetime.combine(end_dt, datetime.max.time())
 
-    flow = await _StaffPerformanceService.vehicle_flow_summary(
+    flow = await _VehicleFlowDashboardService.build(
         db, start, end, branch_id=branch_id
     )
     return flow
+
+
+@router.get("/dashboard/at-risk", response_model=List[VehicleFlowAtRiskAlert])
+async def at_risk_dashboard(
+    branch_id: int = None,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Vehicles currently exceeding their total FRT target time."""
+    from app.services.staff_performance_service import _AtRiskAlertService
+    return await _AtRiskAlertService.live_alerts(db, branch_id=branch_id)
 
 
 @router.get("/dashboard/staff-performance", response_model=StaffPerformanceResponse)
@@ -467,13 +478,13 @@ async def parts_shortage_patterns(
     db: AsyncSession = Depends(get_db)
 ):
     """Aggregate parts-wait remarks to surface recurring parts delay patterns."""
-    from app.services.staff_performance_service import _StaffPerformanceService
+    from app.services.staff_performance_service import _PartsShortageService
     end_dt = _parse_date(end_date) if end_date else datetime.utcnow().date()
     start_dt = _parse_date(start_date) if start_date else end_dt - timedelta(days=30)
     start = datetime.combine(start_dt, datetime.min.time())
     end = datetime.combine(end_dt, datetime.max.time())
 
-    patterns = await _StaffPerformanceService.parts_shortage_patterns(
+    patterns = await _PartsShortageService.patterns(
         db, start, end, branch_id=branch_id
     )
     return patterns
@@ -487,13 +498,11 @@ async def staff_utilization_dashboard(
     db: AsyncSession = Depends(get_db)
 ):
     """Active technician time vs shift time, per staff member on a given date."""
-    from app.services.staff_performance_service import _StaffPerformanceService
+    from app.services.staff_performance_service import _StaffUtilizationService
     target_date = _parse_date(date)
-    start = datetime.combine(target_date, datetime.min.time())
-    end = start + timedelta(days=1)
 
-    rows = await _StaffPerformanceService.staff_utilization(
-        db, target_date, start, end, branch_id=branch_id
+    rows = await _StaffUtilizationService.utilization_by_day(
+        db, target_date, branch_id=branch_id
     )
     return rows
 
@@ -507,13 +516,13 @@ async def rework_rate_dashboard(
     db: AsyncSession = Depends(get_db)
 ):
     """Rework cycle counts per technician as a separate quality metric."""
-    from app.services.staff_performance_service import _StaffPerformanceService
+    from app.services.staff_performance_service import _ReworkRateReportService
     end_dt = _parse_date(end_date) if end_date else datetime.utcnow().date()
     start_dt = _parse_date(start_date) if start_date else end_dt - timedelta(days=30)
     start = datetime.combine(start_dt, datetime.min.time())
     end = datetime.combine(end_dt, datetime.max.time())
 
-    report = await _StaffPerformanceService.rework_rate_report(
+    report = await _ReworkRateReportService.report(
         db, start, end, branch_id=branch_id
     )
     return report
@@ -530,7 +539,13 @@ async def ai_action_plan(
     credentials are configured.
     """
     from app.services.ai_action_plan_service import _AIActionPlanService
-    from app.services.staff_performance_service import _StaffPerformanceService
+    from app.services.staff_performance_service import (
+        _VehicleFlowDashboardService,
+        _PartsShortageService,
+        _StaffUtilizationService,
+        _ReworkRateReportService,
+        _AtRiskAlertService,
+    )
 
     branch_id = request.get("branch_id")
     period_start = request.get("period_start")
@@ -541,18 +556,20 @@ async def ai_action_plan(
     start = datetime.combine(start_dt, datetime.min.time())
     end = datetime.combine(end_dt, datetime.max.time())
 
-    vehicle_flow = await _StaffPerformanceService.vehicle_flow_summary(
+    vehicle_flow = await _VehicleFlowDashboardService.build(
         db, start, end, branch_id=branch_id
     )
-    parts_patterns = await _StaffPerformanceService.parts_shortage_patterns(
+    parts_patterns = await _PartsShortageService.patterns(
         db, start, end, branch_id=branch_id
     )
-    utilization = await _StaffPerformanceService.staff_utilization(
-        db, end_dt, start, end, branch_id=branch_id
+    utilization = await _StaffUtilizationService.utilization_by_day(
+        db, end_dt, branch_id=branch_id
     )
-    rework = await _StaffPerformanceService.rework_rate_report(
+    rework = await _ReworkRateReportService.report(
         db, start, end, branch_id=branch_id
     )
+
+    at_risk = await _AtRiskAlertService.live_alerts(db, branch_id=branch_id)
 
     plan = await _AIActionPlanService.generate(
         period_start=str(start_dt),
@@ -560,7 +577,7 @@ async def ai_action_plan(
         branch_id=branch_id,
         vehicle_flow=vehicle_flow,
         deviation_summary={"note": "Use /dashboard/deviation-summary for full details"},
-        at_risk_alerts=vehicle_flow.get("at_risk_alerts", []),
+        at_risk_alerts=at_risk,
         parts_shortage_patterns=parts_patterns,
         staff_utilization=utilization,
         rework_rate=rework,

@@ -19,7 +19,7 @@ from app.core.security import decode_token, get_password_hash
 from app.core.database import get_db
 from app.schemas.schemas_partf import (
     VehicleFlowResponse, StaffPerformanceResponse, StaffUtilizationRow,
-    PartsShortagePatterns, ReworkRateReport, AIActionPlanResponse,
+    PartsShortagePatterns, ReworkRateReport, AIActionPlanResponse, VehicleFlowAtRiskAlert,
     TeamTargetsDashboard, StaffTargetUpsert, UserShiftCreate, DemoRevenueEntryCreate,
 )
 from app.models.models import (
