@@ -558,7 +558,7 @@ class _ReworkRateReportService:
     ) -> Dict[str, Any]:
         event_stmt = (
             select(CaptureEvent)
-            .options(joinedload(CaptureEvent.user).joinedload(User.role))
+            .options(joinedload(CaptureEvent.user).joinedload(User.role), joinedload(CaptureEvent.stage))
             .where(
                 CaptureEvent.received_at_server >= start_dt,
                 CaptureEvent.received_at_server < end_dt,
