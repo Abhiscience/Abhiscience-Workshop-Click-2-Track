@@ -117,6 +117,26 @@ ALTER TABLE capture_events
 ALTER TABLE capture_events
     ADD COLUMN IF NOT EXISTS parts_wait_remark TEXT;
 
+-- Part G: photo authenticity columns
+ALTER TABLE capture_events
+    ADD COLUMN IF NOT EXISTS exif_timestamp TIMESTAMP WITHOUT TIME ZONE;
+
+ALTER TABLE capture_events
+    ADD COLUMN IF NOT EXISTS exif_missing BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE capture_events
+    ADD COLUMN IF NOT EXISTS authenticity_flags JSONB NOT NULL DEFAULT '[]';
+
+-- Part G: branch workshop geofence
+ALTER TABLE branches
+    ADD COLUMN IF NOT EXISTS workshop_geo_lat DOUBLE PRECISION;
+
+ALTER TABLE branches
+    ADD COLUMN IF NOT EXISTS workshop_geo_lng DOUBLE PRECISION;
+
+ALTER TABLE branches
+    ADD COLUMN IF NOT EXISTS geo_radius_meters INTEGER NOT NULL DEFAULT 200;
+
 -- Seed default cancellation categories (idempotent).
 INSERT INTO cancellation_categories (category_name, category_code, is_active) VALUES
     ('Customer refused zero bill', 'CUSTOMER_REFUSED_ZERO_BILL', TRUE),

@@ -1,16 +1,23 @@
 """Capture event endpoints."""
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Request
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional
+import hashlib
 import uuid
 import asyncio
-from datetime import datetime
+from math import radians
+from datetime import datetime, timedelta
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.models.models import CaptureEvent, LinkStatus, MatchStatus, PendingVehicle, WorkflowStage, JobCategory, User, AppInstallation, Role, OverrideRequest, OverrideRequestStatus, JobCard, Vehicle, FlatRateTimeCatalog
-from app.schemas.schemas import CaptureEventCreate, CaptureEvent as CaptureEventSchema, OverrideRequestCreate, OverrideRequestResponse, CaptureEventVoidRequest, FlatRateTimeCatalogCreate, FlatRateTimeCatalog as FlatRateTimeCatalogSchema
+from app.schemas.schemas import (
+    CaptureEventCreate, CaptureEvent as CaptureEventSchema, OverrideRequestCreate, OverrideRequestResponse,
+    CaptureEventVoidRequest, FlatRateTimeCatalogCreate, FlatRateTimeCatalog as FlatRateTimeCatalogSchema,
+    SuspiciousCaptureReviewResponse, BranchLocationConfig,
+)
 from app.core.security import decode_token
 from app.providers.ocr_provider import get_ocr_provider
 from app.providers.anpr_provider import normalize_plate
@@ -80,7 +87,9 @@ async def create_capture(
     work_done_category_id: int | None = None,
     parts_wait: bool = False,
     parts_wait_remark: str | None = None,
-    image: UploadFile = File(...),  # Part D: mandatory image
+    geo_lat: float | None = None,
+    geo_lng: float | None = None,
+    image: UploadFile = File(...),
     plate_text: str = None,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -123,6 +132,14 @@ async def create_capture(
 
     normalized_plate = normalize_plate(ocr_result["plate_text"]) if ocr_result.get("plate_text") else None
 
+    # Part G: EXIF timestamp extraction
+    exif_timestamp, exif_missing = None, True
+    try:
+        from app.services.photo_authenticity_service import PhotoAuthenticityService
+        exif_timestamp, exif_missing = PhotoAuthenticityService.extract_exif_timestamp(image_bytes)
+    except Exception:
+        pass
+
     # Attempt auto-link for gate entries or any event with a normalized plate.
     match_status, match_method, job_card_id, vehicle_id, pending_vehicle_ref = await _auto_link_event(
         db, normalized_plate, stage
@@ -152,6 +169,10 @@ async def create_capture(
         installation_id=1,
         image_url=image_url,
         image_hash=image_hash,
+        exif_timestamp=exif_timestamp,
+        exif_missing=exif_missing,
+        geo_lat=geo_lat,
+        geo_lng=geo_lng,
         plate_text_raw=ocr_result.get("plate_text"),
         plate_text_normalized=normalized_plate,
         plate_confidence=ocr_result.get("confidence", 0.95),
@@ -168,6 +189,23 @@ async def create_capture(
     )
 
     db.add(event)
+    await db.flush()
+
+    # G: run authenticity checks after every new capture and store the flags.
+    try:
+        from app.services.photo_authenticity_service import PhotoAuthenticityService
+        flagged_events = await PhotoAuthenticityService.evaluate_events(
+            db=db,
+            events=[event],
+            branch_id=stage.branch_id,
+        )
+        if flagged_events:
+            await db.flush()
+    except Exception:
+        # Authenticity checks must not break capture recording.
+        import logging
+        logging.exception("authenticity check failed")
+
     await db.commit()
     await db.refresh(event)
 
@@ -183,7 +221,9 @@ async def submit_override_request(
     plate_text: str = None,
     remarks: str = None,
     work_done_category_id: int = None,
-    image: UploadFile = File(...),  # Part D: mandatory image even for override requests
+    geo_lat: float | None = None,
+    geo_lng: float | None = None,
+    image: UploadFile = File(...),
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -216,9 +256,21 @@ async def submit_override_request(
         image_bytes, getattr(image, "filename", ""), plate_text
     )
 
+    # Part G: EXIF timestamp extraction
+    exif_timestamp, exif_missing = None, True
+    try:
+        from app.services.photo_authenticity_service import PhotoAuthenticityService
+        exif_timestamp, exif_missing = PhotoAuthenticityService.extract_exif_timestamp(image_bytes)
+    except Exception:
+        pass
+
     request_data = {
         "image_url": image_url,
         "image_hash": image_hash,
+        "exif_timestamp": exif_timestamp.isoformat() if exif_timestamp else None,
+        "exif_missing": exif_missing,
+        "geo_lat": geo_lat,
+        "geo_lng": geo_lng,
         "plate_text_raw": ocr_result.get("plate_text"),
         "plate_text_normalized": normalize_plate(ocr_result["plate_text"]) if ocr_result.get("plate_text") else None,
         "plate_confidence": ocr_result.get("confidence", 0.95),

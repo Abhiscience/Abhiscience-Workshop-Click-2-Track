@@ -12,8 +12,17 @@ from app.providers.ocr_provider import get_ocr_provider
 from app.providers.dms_provider import get_dms_provider
 from app.core.security import decode_token, get_password_hash
 from app.core.database import get_db
-from app.models.models import Branch, CaptureEvent, JobCard, JobCategory, CancellationCategory, Role, User, Vehicle, WorkflowStage, OverrideRequest, OverrideRequestStatus, AppInstallation, FlatRateTimeCatalog, JobCardJobType
-from app.schemas.schemas import OverrideRequestCreate, OverrideRequestResponse, CancellationCategoryCreate, CancellationCategory as CancellationCategorySchema, CancelledPartialWorkReport, FlatRateTimeCatalogCreate, FlatRateTimeCatalog as FlatRateTimeCatalogSchema, JobCardJobTypeCreate, JobCardJobTypesResponse
+from app.models.models import (
+    Branch, CaptureEvent, JobCard, JobCategory, CancellationCategory, Role, User, Vehicle, WorkflowStage,
+    OverrideRequest, OverrideRequestStatus, AppInstallation, FlatRateTimeCatalog, JobCardJobType,
+)
+from app.schemas.schemas import (
+    OverrideRequestCreate, OverrideRequestResponse, CancellationCategoryCreate,
+    CancellationCategory as CancellationCategorySchema, CancelledPartialWorkReport,
+    FlatRateTimeCatalogCreate, FlatRateTimeCatalog as FlatRateTimeCatalogSchema,
+    JobCardJobTypeCreate, JobCardJobTypesResponse,
+    SuspiciousCaptureReviewResponse, BranchLocationConfig,
+)
 from app.services.push_service import send_push_notification, build_override_decision_title
 
 router = APIRouter()
@@ -487,6 +496,147 @@ async def get_job_card_job_types(
         "job_card_id": job_card_id,
         "total_target_time_minutes": sum(jt["target_time_minutes"] for jt in job_types),
         "job_types": job_types,
+    }
+
+
+@router.get("/suspicious-captures", response_model=SuspiciousCaptureReviewResponse)
+async def suspicious_captures_review(
+    branch_id: int,
+    date: datetime.date | None = None,
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Manager/service-manager review queue for photo authenticity red flags.
+
+    This is a prioritized list, not an automatic rejection. Flagged captures
+    still count as valid until a human overrides them. These signals are
+    statistical red flags, not proof of fraud.
+    """
+    await _require_admin_role(admin["user_id"], db)
+
+    if date is None:
+        from datetime import date as _date
+        date = _date.today()
+
+    start_dt = datetime.combine(date, datetime.min.time())
+    end_dt = datetime.combine(date, datetime.max.time())
+
+    stmt = (
+        select(CaptureEvent)
+        .options(
+            joinedload(CaptureEvent.stage),
+            joinedload(CaptureEvent.user),
+            joinedload(CaptureEvent.job_card).joinedload(JobCard.vehicle),
+        )
+        .where(
+            CaptureEvent.received_at_server >= start_dt,
+            CaptureEvent.received_at_server < end_dt,
+            CaptureEvent.voided == False,
+        )
+        .order_by(CaptureEvent.received_at_server.desc())
+    )
+
+    # If branch cannot be inferred directly from capture, filter by branch_id
+    # via the job_card branch for now. Captures with missing job_card_id are still
+    # included because a manager needs to see them (location-only captures etc.).
+    result = await db.execute(stmt)
+    events = result.scalars().unique().all()
+
+    # Refresh flags for the day before returning.
+    from app.services.photo_authenticity_service import PhotoAuthenticityService
+    await PhotoAuthenticityService.evaluate_events(db, events, branch_id=branch_id)
+
+    flagged_by_type = {flag: [] for flag in PhotoAuthenticityService.FLAG_LABELS}
+    unflagged = []
+
+    for event in events:
+        flags = event.authenticity_flags or []
+        if not flags:
+            unflagged.append(event)
+            continue
+        for flag in flags:
+            if flag in flagged_by_type:
+                flagged_by_type[flag].append(event)
+
+    def _event_payload(event, branch_filter_id=None):
+        jc = event.job_card
+        vehicle = jc.vehicle if jc else None
+        return {
+            "event_id": event.event_id,
+            "stage_code": event.stage.stage_code if event.stage else None,
+            "stage_name": event.stage.stage_name if event.stage else None,
+            "user_id": event.user_id,
+            "user_name": event.user.name if event.user else None,
+            "job_card_id": event.job_card_id,
+            "external_job_card_no": jc.external_job_card_no if jc else None,
+            "vehicle_id": event.vehicle_id,
+            "registration_number": vehicle.registration_number if vehicle else None,
+            "image_url": event.image_url,
+            "image_hash": event.image_hash,
+            "geo_lat": event.geo_lat,
+            "geo_lng": event.geo_lng,
+            "captured_at_device": event.captured_at_device,
+            "received_at_server": event.received_at_server,
+            "exif_timestamp": event.exif_timestamp,
+            "exif_missing": event.exif_missing,
+            "parts_wait": event.parts_wait,
+            "remarks": event.remarks,
+        }
+
+    items = []
+    for flag, flag_events in flagged_by_type.items():
+        if not flag_events:
+            continue
+        items.append({
+            "flag_type": flag,
+            "flag_label": PhotoAuthenticityService.FLAG_LABELS[flag],
+            "severity": "high" if flag not in ("EXIF_MISSING", "LOCATION_MISSING") else "info",
+            "limitation_note": (
+                "Statistical red flag; verify the photo physically before action. "
+                "Many phones strip EXIF by default, and GPS may be unavailable indoors."
+            ),
+            "total": len(flag_events),
+            "captures": [_event_payload(e) for e in flag_events],
+        })
+
+    return {
+        "branch_id": branch_id,
+        "date": date.isoformat(),
+        "total_reviewed": len(events),
+        "flagged_groups": items,
+        "unflagged_count": len(unflagged),
+        "disclaimer": (
+            "These are statistical red flags, not proof of fraud. They narrow down "
+            "what a human should physically check; they do not replace human judgment "
+            "on whether the photo genuinely shows the right vehicle/work."
+        ),
+    }
+
+
+@router.put("/branch-location/{branch_id}", response_model=BranchLocationConfig)
+async def update_branch_location(
+    branch_id: int,
+    config: BranchLocationConfig,
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Set the workshop GPS location and acceptable radius for location flagging."""
+    await _require_admin_role(admin["user_id"], db)
+
+    result = await db.execute(select(Branch).where(Branch.branch_id == branch_id))
+    branch = result.scalar_one_or_none()
+    if not branch:
+        raise HTTPException(status_code=404, detail="Branch not found")
+
+    branch.workshop_geo_lat = config.workshop_geo_lat
+    branch.workshop_geo_lng = config.workshop_geo_lng
+    branch.geo_radius_meters = config.geo_radius_meters
+    await db.commit()
+    await db.refresh(branch)
+    return {
+        "workshop_geo_lat": branch.workshop_geo_lat,
+        "workshop_geo_lng": branch.workshop_geo_lng,
+        "geo_radius_meters": branch.geo_radius_meters,
     }
 
 

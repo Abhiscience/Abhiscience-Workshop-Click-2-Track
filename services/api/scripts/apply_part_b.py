@@ -54,17 +54,27 @@ async def main():
             if "cancellation_category_id" not in jc_cols:
                 sync_conn.execute(text("ALTER TABLE job_cards ADD COLUMN cancellation_category_id INTEGER REFERENCES cancellation_categories(cancellation_category_id)"))
 
-            # Part E: ensure target_time_minutes column on frt_catalog exists
-            # if the table was created from metadata, this is a no-op.
-            if "frt_catalog" in inspector.get_table_names():
-                frt_cols = {c["name"] for c in inspector.get_columns("frt_catalog")}
-                if "target_time_minutes" not in frt_cols:
-                    sync_conn.execute(text("ALTER TABLE frt_catalog ADD COLUMN target_time_minutes INTEGER NOT NULL DEFAULT 0"))
+            # Part G: capture authenticity signal columns.
+            if "exif_timestamp" not in ce_cols:
+                sync_conn.execute(text("ALTER TABLE capture_events ADD COLUMN exif_timestamp TIMESTAMP WITHOUT TIME ZONE"))
+            if "exif_missing" not in ce_cols:
+                sync_conn.execute(text("ALTER TABLE capture_events ADD COLUMN exif_missing BOOLEAN NOT NULL DEFAULT FALSE"))
+            if "authenticity_flags" not in ce_cols:
+                sync_conn.execute(text("ALTER TABLE capture_events ADD COLUMN authenticity_flags JSONB NOT NULL DEFAULT '[]'"))
+
+            # Part G: branch workshop geofence columns.
+            branch_cols = {c["name"] for c in inspector.get_columns("branches")}
+            if "workshop_geo_lat" not in branch_cols:
+                sync_conn.execute(text("ALTER TABLE branches ADD COLUMN workshop_geo_lat DOUBLE PRECISION"))
+            if "workshop_geo_lng" not in branch_cols:
+                sync_conn.execute(text("ALTER TABLE branches ADD COLUMN workshop_geo_lng DOUBLE PRECISION"))
+            if "geo_radius_meters" not in branch_cols:
+                sync_conn.execute(text("ALTER TABLE branches ADD COLUMN geo_radius_meters INTEGER NOT NULL DEFAULT 200"))
 
         await conn.run_sync(ensure_additional_columns)
 
     await engine.dispose()
-    print("Part B/D/E migration applied successfully.")
+    print("Part B/D/E/G migration applied successfully.")
 
 
 if __name__ == "__main__":

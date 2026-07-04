@@ -388,17 +388,64 @@ class CancelledJobPartialWork(BaseModel):
 class CancelledPartialWorkReport(BaseModel):
     items: List[CancelledJobPartialWork]
     total_items: int
+# Photo authenticity (Part G) schemas
+class SuspiciousCapture(BaseModel):
+    event_id: int
+    stage_code: Optional[str]
+    stage_name: Optional[str]
+    user_id: Optional[int]
+    user_name: Optional[str]
+    job_card_id: Optional[int]
+    external_job_card_no: Optional[str]
+    vehicle_id: Optional[int]
+    registration_number: Optional[str]
+    image_url: Optional[str]
+    image_hash: Optional[str]
+    geo_lat: Optional[float]
+    geo_lng: Optional[float]
+    captured_at_device: Optional[datetime]
+    received_at_server: Optional[datetime]
+    exif_timestamp: Optional[datetime]
+    exif_missing: Optional[bool]
+    parts_wait: Optional[bool]
+    remarks: Optional[str]
 
 
-# Technician time cycle report schemas
+class SuspiciousCaptureGroup(BaseModel):
+    flag_type: str
+    flag_label: str
+    severity: str
+    limitation_note: str
+    total: int
+    captures: List[SuspiciousCapture]
+
+
+class SuspiciousCaptureReviewResponse(BaseModel):
+    branch_id: int
+    date: str
+    total_reviewed: int
+    flagged_groups: List[SuspiciousCaptureGroup]
+    unflagged_count: int
+    disclaimer: str
+
+
+class BranchLocationConfig(BaseModel):
+    workshop_geo_lat: float
+    workshop_geo_lng: float
+    geo_radius_meters: int = 200
+
+
+# Technician cycle / Part E report schemas
 class CycleStageEvent(BaseModel):
     event_id: int
-    stage_code: str
+    stage_code: Optional[str]
     stage_name: Optional[str]
     user_id: Optional[int]
     user_name: Optional[str]
     role_name: Optional[str]
     captured_at: Optional[datetime]
+    parts_wait: Optional[bool]
+    parts_wait_remark: Optional[str]
 
 
 class TechnicianCycle(BaseModel):
@@ -407,11 +454,11 @@ class TechnicianCycle(BaseModel):
     finished_at: Optional[datetime]
     technician_id: Optional[int]
     technician_name: Optional[str]
-    total_minutes: float
+    total_minutes: Optional[float]
     parts_wait_minutes: float
     parts_wait_start: Optional[datetime]
     parts_wait_end: Optional[datetime]
-    net_work_minutes: float
+    net_work_minutes: Optional[float]
     stage_events: List[CycleStageEvent]
 
 
@@ -423,7 +470,7 @@ class QcWaitWindow(BaseModel):
 
 class JobCardCycleReport(BaseModel):
     job_card_id: int
-    external_job_card_no: str
+    external_job_card_no: Optional[str]
     registration_number: Optional[str]
     total_target_time_minutes: Optional[int]
     cycles: List[TechnicianCycle]

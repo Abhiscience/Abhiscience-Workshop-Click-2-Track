@@ -57,7 +57,12 @@ class Branch(Base):
     branch_name = Column(String(200), nullable=False)
     timezone = Column(String(50), default="Asia/Dubai")
     address = Column(Text)
-    
+
+    # Part F/G: workshop location boundary for GPS location flagging
+    workshop_geo_lat = Column(Float, nullable=True)
+    workshop_geo_lng = Column(Float, nullable=True)
+    geo_radius_meters = Column(Integer, nullable=True, default=200)
+
     users = relationship("User", back_populates="branch")
     workflow_stages = relationship("WorkflowStage", back_populates="branch")
     job_cards = relationship("JobCard", back_populates="branch")
@@ -139,7 +144,11 @@ class CaptureEvent(Base):
     installation_id = Column(Integer, ForeignKey("app_installations.installation_id"))
     
     image_url = Column(String(500))
-    image_hash = Column(String(255))
+    # Part F/G: capture authenticity signals
+    image_hash = Column(String(255), nullable=True)
+    exif_timestamp = Column(DateTime, nullable=True)
+    exif_missing = Column(Boolean, default=False)
+    authenticity_flags = Column(JSON, default=list)  # e.g. ["DUPLICATE_PHOTO", "RAPID_FIRE"]
     plate_text_raw = Column(String(50))
     plate_text_normalized = Column(String(50))
     plate_confidence = Column(Float)
