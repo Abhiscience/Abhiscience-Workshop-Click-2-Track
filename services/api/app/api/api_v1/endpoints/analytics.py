@@ -293,16 +293,28 @@ async def get_manpower_summary(
     start, end = _date_range_bounds(target_date)
 
     stmt = (
-        select(CaptureEvent.user_id, func.count(CaptureEvent.event_id).label("capture_count"))
+        select(
+            CaptureEvent.user_id,
+            JobCard.status.label("job_card_status"),
+            func.count(CaptureEvent.event_id).label("capture_count")
+        )
         .where(
             CaptureEvent.received_at_server >= start,
             CaptureEvent.received_at_server < end
         )
-        .group_by(CaptureEvent.user_id)
+        .outerjoin(JobCard, CaptureEvent.job_card_id == JobCard.job_card_id)
+        .group_by(CaptureEvent.user_id, JobCard.status)
     )
 
     result = await db.execute(stmt)
-    counts = {row.user_id: row.capture_count for row in result.all()}
+    counts_rows = result.all()
+
+    # Exclude captures from cancelled job cards from per-user productivity counts,
+    # but keep counts from non-cancelled jobs and unmatched captures.
+    counts = {}
+    for row in counts_rows:
+        if row.job_card_status != "CANCELLED":
+            counts[row.user_id] = counts.get(row.user_id, 0) + row.capture_count
 
     # Enrich with user details
     user_ids = list(counts.keys())

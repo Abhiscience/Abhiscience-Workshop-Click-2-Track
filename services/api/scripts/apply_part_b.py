@@ -46,10 +46,12 @@ async def main():
                 if col_name not in ce_cols:
                     sync_conn.execute(text(col_sql))
 
-            # job_cards (Part D cancellation reason)
+            # job_cards (Part D cancellation reason + category)
             jc_cols = {c["name"] for c in inspector.get_columns("job_cards")}
             if "cancellation_reason" not in jc_cols:
                 sync_conn.execute(text("ALTER TABLE job_cards ADD COLUMN cancellation_reason TEXT"))
+            if "cancellation_category_id" not in jc_cols:
+                sync_conn.execute(text("ALTER TABLE job_cards ADD COLUMN cancellation_category_id INTEGER REFERENCES cancellation_categories(cancellation_category_id)"))
 
         await conn.run_sync(ensure_additional_columns)
 

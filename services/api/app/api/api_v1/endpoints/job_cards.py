@@ -8,7 +8,7 @@ from datetime import datetime
 from app.core.database import get_db
 from app.core.security import decode_token
 from app.schemas.schemas import JobCard as JobCardSchema, VehicleTimeline, TimelineEvent, DeviationResponse, JobCardNotApplicableStageCreate, JobCardNotApplicableStageResponse
-from app.models.models import JobCard, User, WorkflowStage, Vehicle, CaptureEvent
+from app.models.models import JobCard, User, WorkflowStage, Vehicle, CaptureEvent, CancellationCategory
 from app.services.not_applicable_service import mark_stage_not_applicable, get_not_applicable_stages
 
 
@@ -101,11 +101,14 @@ async def list_not_applicable_stages(
 async def cancel_job_card(
     job_card_id: str,
     reason: str,
+    cancellation_category_id: int | None = None,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Cancel a job card with a required reason. Cancelled jobs are excluded
-    from all turnaround/compliance/analytics calculations."""
+    """Cancel a job card with a required reason and optional cancellation category.
+
+    Cancelled jobs are excluded from all turnaround/compliance/analytics calculations.
+    """
     await _require_admin_or_advisor(current_user, db)
 
     if not reason or not reason.strip():
@@ -119,13 +122,25 @@ async def cancel_job_card(
     if job_card.status in ("CANCELLED", "COMPLETED", "CLOSED"):
         raise HTTPException(status_code=400, detail="Job card is already in a terminal state")
 
+    if cancellation_category_id:
+        cat_result = await db.execute(
+            select(CancellationCategory).where(
+                CancellationCategory.cancellation_category_id == cancellation_category_id,
+                CancellationCategory.is_active == True,
+            )
+        )
+        if not cat_result.scalars().first():
+            raise HTTPException(status_code=400, detail="Invalid cancellation category")
+
     job_card.status = "CANCELLED"
+    job_card.cancellation_category_id = cancellation_category_id
     job_card.cancellation_reason = reason.strip()
     job_card.close_time = datetime.utcnow()
     await db.commit()
     return {
         "job_card_id": job_card.job_card_id,
         "status": job_card.status,
+        "cancellation_category_id": job_card.cancellation_category_id,
         "cancellation_reason": job_card.cancellation_reason,
         "close_time": job_card.close_time.isoformat() if job_card.close_time else None,
     }
@@ -213,7 +228,7 @@ async def get_vehicle_timeline(
                 stage_code=e.stage.stage_code if e.stage else "",
                 user_name=e.user.name if e.user else "",
                 role_name=e.user.role.role_name if e.user and e.user.role else "",
-captured_at=e.received_at_server,
+                captured_at=e.received_at_server,
                 image_url=e.image_url,
             )
             for e in events

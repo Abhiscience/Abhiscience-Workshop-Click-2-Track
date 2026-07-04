@@ -115,6 +115,7 @@ class JobCard(Base):
     branch_id = Column(Integer, ForeignKey("branches.branch_id"))
     advisor_id = Column(Integer, ForeignKey("users.user_id"), nullable=True)
     status = Column(String(50), default="OPEN")
+    cancellation_category_id = Column(Integer, ForeignKey("cancellation_categories.cancellation_category_id"), nullable=True)
     cancellation_reason = Column(Text, nullable=True)
     open_time = Column(DateTime)
     close_time = Column(DateTime, nullable=True)
@@ -200,6 +201,21 @@ class JobCategory(Base):
     is_active = Column(Boolean, default=True)
 
     captures = relationship("CaptureEvent", back_populates="work_done_category")
+
+
+class CancellationCategory(Base):
+    __tablename__ = "cancellation_categories"
+
+    cancellation_category_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    branch_id = Column(Integer, ForeignKey("branches.branch_id"), nullable=True)
+    category_name = Column(String(200), nullable=False)
+    category_code = Column(String(50), nullable=True, unique=True)
+    is_active = Column(Boolean, default=True)
+
+    job_cards = relationship("JobCard", back_populates="cancellation_category")
+
+
+JobCard.cancellation_category = relationship("CancellationCategory", back_populates="job_cards")
 
 
 class OverrideRequest(Base):

@@ -70,3 +70,26 @@ ALTER TABLE capture_events
 
 ALTER TABLE job_cards
     ADD COLUMN IF NOT EXISTS cancellation_reason TEXT;
+
+ALTER TABLE job_cards
+    ADD COLUMN IF NOT EXISTS cancellation_category_id INTEGER REFERENCES cancellation_categories(cancellation_category_id);
+
+CREATE TABLE IF NOT EXISTS cancellation_categories (
+    cancellation_category_id SERIAL PRIMARY KEY,
+    branch_id INTEGER REFERENCES branches(branch_id),
+    category_name VARCHAR(200) NOT NULL,
+    category_code VARCHAR(50) UNIQUE,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+CREATE INDEX IF NOT EXISTS idx_cancellation_categories_code
+    ON cancellation_categories(category_code);
+
+-- Seed default cancellation categories (idempotent).
+INSERT INTO cancellation_categories (category_name, category_code, is_active) VALUES
+    ('Customer refused zero bill', 'CUSTOMER_REFUSED_ZERO_BILL', TRUE),
+    ('Vehicle undriveable', 'VEHICLE_UNDRIVEABLE', TRUE),
+    ('Customer disputed cost', 'CUSTOMER_DISPUTED_COST', TRUE),
+    ('Duplicate entry', 'DUPLICATE_ENTRY', TRUE),
+    ('Other', 'OTHER', TRUE)
+ON CONFLICT (category_code) DO NOTHING;

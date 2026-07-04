@@ -73,6 +73,8 @@ class JobCardBase(BaseModel):
 class JobCard(JobCardBase):
     job_card_id: str
     status: str
+    cancellation_category_id: Optional[int]
+    cancellation_reason: Optional[str]
     open_time: Optional[datetime]
     close_time: Optional[datetime]
 
@@ -286,4 +288,63 @@ class JobCategory(JobCategoryBase):
 
     class Config:
         from_attributes = True
+
+
+# Cancellation Category schemas
+class CancellationCategoryBase(BaseModel):
+    branch_id: Optional[int] = None
+    category_name: str
+    category_code: Optional[str] = None
+    is_active: Optional[bool] = True
+
+class CancellationCategoryCreate(CancellationCategoryBase):
+    pass
+
+class CancellationCategory(CancellationCategoryBase):
+    cancellation_category_id: int
+
+    class Config:
+        from_attributes = True
+
+
+# Cancelled partial-work report schemas
+class PartialWorkCaptureEvent(BaseModel):
+    event_id: int
+    stage_id: Optional[int]
+    stage_name: Optional[str]
+    stage_code: Optional[str]
+    user_id: Optional[int]
+    user_name: Optional[str]
+    role_name: Optional[str]
+    captured_at: Optional[datetime]
+    time_logged_minutes: float
+    remarks: Optional[str]
+
+class PartialWorkTechnicianSummary(BaseModel):
+    user_id: int
+    user_name: str
+    role_name: Optional[str]
+    event_count: int
+    total_time_minutes: float
+    events: List[PartialWorkCaptureEvent]
+
+class CancelledJobPartialWork(BaseModel):
+    job_card_id: int
+    external_job_card_no: str
+    registration_number: Optional[str]
+    vehicle_id: Optional[int]
+    branch_id: Optional[int]
+    cancellation_category_id: Optional[int]
+    cancellation_category_name: Optional[str]
+    cancellation_reason: Optional[str]
+    cancelled_at: Optional[datetime]
+    cancelled_by: Optional[int]
+    cancelled_by_name: Optional[str]
+    technician_summary: List[PartialWorkTechnicianSummary]
+    total_capture_time_minutes: float
+    event_count: int
+
+class CancelledPartialWorkReport(BaseModel):
+    items: List[CancelledJobPartialWork]
+    total_items: int
 

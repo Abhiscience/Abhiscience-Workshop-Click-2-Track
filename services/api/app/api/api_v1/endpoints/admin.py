@@ -11,8 +11,8 @@ from datetime import datetime
 from app.providers.ocr_provider import get_ocr_provider
 from app.core.security import decode_token, get_password_hash
 from app.core.database import get_db
-from app.models.models import Branch, CaptureEvent, JobCard, JobCategory, Role, User, Vehicle, WorkflowStage, OverrideRequest, OverrideRequestStatus, AppInstallation
-from app.schemas.schemas import OverrideRequestCreate, OverrideRequestResponse
+from app.models.models import Branch, CaptureEvent, JobCard, JobCategory, CancellationCategory, Role, User, Vehicle, WorkflowStage, OverrideRequest, OverrideRequestStatus, AppInstallation
+from app.schemas.schemas import OverrideRequestCreate, OverrideRequestResponse, CancellationCategoryCreate, CancellationCategory, CancelledPartialWorkReport
 from app.services.push_service import send_push_notification, build_override_decision_title
 
 router = APIRouter()
@@ -503,6 +503,115 @@ async def create_job_category(
             "is_active": category.is_active,
         }
     }
+
+
+@router.get("/cancellation-categories")
+async def list_cancellation_categories(
+    branch_id: int | None = None,
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """List cancellation categories for the cancel-job-card dropdown."""
+    stmt = select(CancellationCategory)
+    if branch_id:
+        stmt = stmt.where(
+            (CancellationCategory.branch_id == branch_id) | (CancellationCategory.branch_id.is_(None))
+        )
+    stmt = stmt.where(CancellationCategory.is_active == True).order_by(CancellationCategory.category_name)
+    result = await db.execute(stmt)
+    categories = result.scalars().all()
+    return {
+        "categories": [
+            {
+                "cancellation_category_id": c.cancellation_category_id,
+                "branch_id": c.branch_id,
+                "category_name": c.category_name,
+                "category_code": c.category_code,
+                "is_active": c.is_active,
+            }
+            for c in categories
+        ]
+    }
+
+
+@router.post("/cancellation-categories")
+async def create_cancellation_category(
+    category_data: dict,
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new cancellation category (admin-configurable)."""
+    await _require_admin_role(admin["user_id"], db)
+
+    if not category_data.get("category_name"):
+        raise HTTPException(status_code=400, detail="category_name is required")
+    category = CancellationCategory(
+        branch_id=category_data.get("branch_id"),
+        category_name=category_data["category_name"],
+        category_code=category_data.get("category_code"),
+        is_active=category_data.get("is_active", True),
+    )
+    db.add(category)
+    try:
+        await db.commit()
+        await db.refresh(category)
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail="Cancellation category could not be created")
+
+    return {
+        "status": "created",
+        "category": {
+            "cancellation_category_id": category.cancellation_category_id,
+            "branch_id": category.branch_id,
+            "category_name": category.category_name,
+            "category_code": category.category_code,
+            "is_active": category.is_active,
+        }
+    }
+
+
+@router.post("/cancellation-categories/seed")
+async def seed_cancellation_categories(
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Idempotent seed of default cancellation categories."""
+    await _require_admin_role(admin["user_id"], db)
+    defaults = [
+        ("Customer refused zero bill", "CUSTOMER_REFUSED_ZERO_BILL"),
+        ("Vehicle undriveable", "VEHICLE_UNDRIVEABLE"),
+        ("Customer disputed cost", "CUSTOMER_DISPUTED_COST"),
+        ("Duplicate entry", "DUPLICATE_ENTRY"),
+        ("Other", "OTHER"),
+    ]
+    created = 0
+    for name, code in defaults:
+        existing = await db.execute(select(CancellationCategory).where(CancellationCategory.category_code == code))
+        if not existing.scalars().first():
+            db.add(CancellationCategory(category_name=name, category_code=code, is_active=True))
+            created += 1
+    if created:
+        await db.commit()
+    return {"status": "seeded", "created": created}
+
+
+@router.get("/cancelled-partial-work", response_model=CancelledPartialWorkReport)
+async def cancelled_partial_work_report(
+    branch_id: int | None = None,
+    cancellation_category_id: int | None = None,
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Service-manager/admin only: cancelled jobs where real capture work was
+    logged before cancellation. Not exposed to technicians' personal stats."""
+    await _require_admin_role(admin["user_id"], db)
+
+    from app.services.cancelled_partial_work_report import _CancelledPartialWorkReportBuilder
+    items = await _CancelledPartialWorkReportBuilder.build(
+        db, branch_id=branch_id, cancellation_category_id=cancellation_category_id
+    )
+    return {"items": items, "total_items": len(items)}
 
 
 @router.get("/override-requests", response_model=list[OverrideRequestResponse])
