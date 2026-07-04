@@ -68,6 +68,43 @@ async def _load_expected_stages(
     return stages
 
 
+async def _load_capture_events_range(
+    db: AsyncSession,
+    start_dt: datetime,
+    end_dt: datetime,
+    stage_ids: set,
+) -> List[CaptureEvent]:
+    """Load capture events for a datetime range, eager-loading relations.
+
+    Excludes:
+      - voided captures
+      - captures attached to CANCELLED job cards
+    """
+    stmt = (
+        select(CaptureEvent)
+        .options(
+            joinedload(CaptureEvent.stage).joinedload(WorkflowStage.role),
+            joinedload(CaptureEvent.user).joinedload(User.role),
+            joinedload(CaptureEvent.job_card),
+            joinedload(CaptureEvent.vehicle),
+        )
+        .outerjoin(JobCard, CaptureEvent.job_card_id == JobCard.job_card_id)
+        .where(
+            CaptureEvent.received_at_server >= start_dt,
+            CaptureEvent.received_at_server < end_dt,
+            CaptureEvent.voided == False,
+            or_(
+                CaptureEvent.job_card_id.is_(None),
+                JobCard.status != "CANCELLED",
+            ),
+        )
+        .where(CaptureEvent.stage_id.in_(stage_ids))
+        .order_by(CaptureEvent.received_at_server)
+    )
+    result = await db.execute(stmt)
+    return list(result.scalars().unique().all())
+
+
 async def _load_capture_events(
     db: AsyncSession,
     target_date: date,
@@ -81,30 +118,7 @@ async def _load_capture_events(
     """
     start = datetime.combine(target_date, datetime.min.time())
     end = start + timedelta(days=1)
-
-    stmt = (
-        select(CaptureEvent)
-        .options(
-            joinedload(CaptureEvent.stage).joinedload(WorkflowStage.role),
-            joinedload(CaptureEvent.user).joinedload(User.role),
-            joinedload(CaptureEvent.job_card),
-            joinedload(CaptureEvent.vehicle),
-        )
-        .outerjoin(JobCard, CaptureEvent.job_card_id == JobCard.job_card_id)
-        .where(
-            CaptureEvent.received_at_server >= start,
-            CaptureEvent.received_at_server < end,
-            CaptureEvent.voided == False,
-            or_(
-                CaptureEvent.job_card_id.is_(None),
-                JobCard.status != "CANCELLED",
-            ),
-        )
-        .where(CaptureEvent.stage_id.in_(stage_ids))
-        .order_by(CaptureEvent.received_at_server)
-    )
-    result = await db.execute(stmt)
-    return list(result.scalars().unique())
+    return await _load_capture_events_range(db, start, end, stage_ids)
 
 
 async def _select_role_name(stage: Optional[WorkflowStage]) -> Optional[str]:
@@ -144,22 +158,27 @@ async def build_morning_meeting_report(
     target_date: Optional[date] = None,
     branch_id: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """Build a deviation report for the morning meeting.
-
-    Returns:
-      - summary counts
-      - per_role breakdowns
-      - per_vehicle cycles with ideal vs actual sequence
-    """
+    """Build a deviation report for the morning meeting (single day view)."""
     target_date = target_date or datetime.utcnow().date()
+    start = datetime.combine(target_date, datetime.min.time())
+    end = start + timedelta(days=1)
+    return await build_deviation_report_range(db, start, end, branch_id)
 
+
+async def build_deviation_report_range(
+    db: AsyncSession,
+    start_dt: datetime,
+    end_dt: datetime,
+    branch_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Build a deviation report for an arbitrary datetime range."""
     stages = await _load_expected_stages(db, branch_id)
     expected_order = {
         s.stage_id: idx for idx, s in enumerate(sorted(stages.values(), key=lambda x: x.sequence_order or 0))
     }
     stage_by_id = stages
 
-    events = await _load_capture_events(db, target_date, set(stages.keys()))
+    events = await _load_capture_events_range(db, start_dt, end_dt, set(stages.keys()))
 
     # Group events by work item: prefer job_card, then vehicle, then pending ref,
     # then plate_text_normalized, only falling back to "unknown" as last resort.
@@ -361,7 +380,9 @@ async def build_morning_meeting_report(
         by_severity[d["severity"]] += 1
 
     return {
-        "target_date": target_date.isoformat(),
+        "period_start": start_dt.isoformat(),
+        "period_end": end_dt.isoformat(),
+        "target_date": start_dt.date().isoformat(),
         "branch_id": branch_id,
         "summary": {
             "total_deviations": total_deviations,

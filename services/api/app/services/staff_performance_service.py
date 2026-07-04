@@ -296,9 +296,11 @@ class _VehicleFlowDashboardService:
                 "deviation_count": 0,
             })
 
-        # Deviation counts from Part C/D morning meeting for context.
-        from app.services.deviation_report_service import build_morning_meeting_report
-        deviation_report = await build_morning_meeting_report(db, start_dt.date(), branch_id)
+        # Deviation counts across the full datetime range.
+        from app.services.deviation_report_service import build_deviation_report_range
+        deviation_report = await build_deviation_report_range(
+            db, start_dt, end_dt, branch_id=branch_id
+        )
         at_risk_alerts = await _AtRiskAlertService.live_alerts(db, branch_id)
 
         # Count deviations per stage_id from the report.
