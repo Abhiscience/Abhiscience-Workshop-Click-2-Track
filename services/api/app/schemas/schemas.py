@@ -409,6 +409,8 @@ class TechnicianCycle(BaseModel):
     technician_name: Optional[str]
     total_minutes: float
     parts_wait_minutes: float
+    parts_wait_start: Optional[datetime]
+    parts_wait_end: Optional[datetime]
     net_work_minutes: float
     stage_events: List[CycleStageEvent]
 

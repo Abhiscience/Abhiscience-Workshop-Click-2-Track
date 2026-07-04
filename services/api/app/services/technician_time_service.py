@@ -122,12 +122,11 @@ class _TechnicianTimeService:
             if code in cls.CYCLE_START:
                 # Close any open cycle if another WORK_STARTED appears before closure.
                 if current_cycle is not None:
-                    # Use current event time as forced end boundary
                     current_cycle["finished_at"] = ts
                     current_cycle["total_minutes"] = cls._minutes_between(
                         current_cycle["started_at"], ts
                     )
-                    cls._finalize_cycle(current_cycle)
+                    cls._finalize_cycle(current_cycle, events)
                     cycles.append(current_cycle)
 
                 current_cycle = {
@@ -140,7 +139,6 @@ class _TechnicianTimeService:
                     "parts_wait_minutes": 0.0,
                     "net_work_minutes": 0.0,
                     "stage_events": [cls._stage_event_dict(event)],
-                    "_parts_wait_start": None,
                 }
                 continue
 
@@ -149,42 +147,79 @@ class _TechnicianTimeService:
 
             current_cycle["stage_events"].append(cls._stage_event_dict(event))
 
-            if code == cls.PARTS_ISSUED and event.parts_wait:
-                # Begin tracking parts-wait window
-                if not current_cycle["_parts_wait_start"]:
-                    current_cycle["_parts_wait_start"] = ts
-            elif current_cycle["_parts_wait_start"]:
-                # End parts-wait window at the next non-parts-wait event
-                delta = cls._minutes_between(current_cycle["_parts_wait_start"], ts)
-                if delta > 0:
-                    current_cycle["parts_wait_minutes"] += delta
-                current_cycle["_parts_wait_start"] = None
-
             if code in cls.CYCLE_END and current_cycle:
                 current_cycle["finished_at"] = ts
                 current_cycle["total_minutes"] = cls._minutes_between(
                     current_cycle["started_at"], ts
                 )
-                cls._finalize_cycle(current_cycle)
+                cls._finalize_cycle(current_cycle, events)
                 cycles.append(current_cycle)
                 current_cycle = None
 
         # Handle last cycle without explicit end
         if current_cycle is not None:
-            last_ts = cls._event_ts(events[-1]) if events else None
-            if current_cycle["_parts_wait_start"] and last_ts:
-                delta = cls._minutes_between(current_cycle["_parts_wait_start"], last_ts)
-                if delta > 0:
-                    current_cycle["parts_wait_minutes"] += delta
             current_cycle["finished_at"] = None
             current_cycle["total_minutes"] = None
-            cls._finalize_cycle(current_cycle)
+            cls._finalize_cycle(current_cycle, events)
             cycles.append(current_cycle)
 
         return cycles
 
     @classmethod
-    def _finalize_cycle(cls, cycle: dict):
+    def _parts_wait_window_in_cycle(
+        cls, cycle_events: List[CaptureEvent], all_events: List[CaptureEvent]
+    ) -> tuple[float, Optional[datetime], Optional[datetime]]:
+        """Find the first parts_wait=true capture inside the cycle and its
+        resolving PARTS_ISSUED with parts_wait=false. Return the wait minutes
+        and the two endpoint timestamps. If no resolving capture exists before
+        the cycle end, fall back to spanning from the flag to the cycle end."""
+        wait_start_event = None
+        for event in cycle_events:
+            if cls._stage_code(event) == cls.PARTS_ISSUED and event.parts_wait:
+                wait_start_event = event
+                break
+
+        if wait_start_event is None:
+            return 0.0, None, None
+
+        wait_start_ts = cls._event_ts(wait_start_event)
+
+        # Try to find the next PARTS_ISSUED with parts_wait=false in the entire
+        # job card (not just the cycle), because the resolving capture may sit
+        # right at the cycle boundary or after additional events.
+        start_index = all_events.index(wait_start_event)
+        resolving_event = None
+        for later_event in all_events[start_index + 1 :]:
+            if cls._stage_code(later_event) == cls.PARTS_ISSUED and not later_event.parts_wait:
+                resolving_event = later_event
+                break
+            # Do not search past a cycle end (WORK_FINISHED / READY_FOR_QC) unless
+            # we have already passed it; since we start inside a cycle, hitting
+            # the cycle end without a resolver means fallback.
+            if cls._stage_code(later_event) in cls.CYCLE_END:
+                resolving_event = later_event
+                break
+
+        if resolving_event is not None:
+            resolving_ts = cls._event_ts(resolving_event)
+            return cls._minutes_between(wait_start_ts, resolving_ts), wait_start_ts, resolving_ts
+
+        # Fallback: span to the end of the provided cycle events
+        last_cycle_ts = cls._event_ts(cycle_events[-1]) if cycle_events else None
+        return cls._minutes_between(wait_start_ts, last_cycle_ts), wait_start_ts, last_cycle_ts
+
+    @classmethod
+    def _finalize_cycle(cls, cycle: dict, all_events: List[CaptureEvent]):
+        cycle_events = [
+            e for e in cycle["stage_events"]
+        ]
+        wait_minutes, wait_start, wait_end = cls._parts_wait_window_in_cycle(
+            cycle_events, all_events
+        )
+        cycle["parts_wait_minutes"] = round(wait_minutes, 2)
+        cycle["parts_wait_start"] = wait_start
+        cycle["parts_wait_end"] = wait_end
+
         if cycle["total_minutes"] is not None:
             cycle["net_work_minutes"] = round(
                 max(0.0, cycle["total_minutes"] - cycle["parts_wait_minutes"]), 2
@@ -192,9 +227,6 @@ class _TechnicianTimeService:
             cycle["total_minutes"] = round(cycle["total_minutes"], 2)
         else:
             cycle["net_work_minutes"] = None
-        cycle["parts_wait_minutes"] = round(cycle["parts_wait_minutes"], 2)
-        # remove internal key
-        cycle.pop("_parts_wait_start", None)
 
     @classmethod
     def _compute_qc_waits(cls, events: List[CaptureEvent]) -> List[dict]:
