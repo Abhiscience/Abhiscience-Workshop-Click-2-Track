@@ -92,8 +92,8 @@ class CaptureEventCreate(CaptureEventBase):
 
 class CaptureEvent(CaptureEventBase):
     event_id: int
-    job_card_id: Optional[str]
-    vehicle_id: Optional[str]
+    job_card_id: Optional[int]
+    vehicle_id: Optional[int]
     pending_vehicle_ref: Optional[str]
     user_id: int
     installation_id: int
