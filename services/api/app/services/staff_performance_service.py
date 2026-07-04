@@ -299,6 +299,7 @@ class _VehicleFlowDashboardService:
         # Deviation counts from Part C/D morning meeting for context.
         from app.services.deviation_report_service import build_morning_meeting_report
         deviation_report = await build_morning_meeting_report(db, start_dt.date(), branch_id)
+        at_risk_alerts = await _AtRiskAlertService.live_alerts(db, branch_id)
 
         # Count deviations per stage_id from the report.
         stage_deviation_counts: Dict[int, int] = defaultdict(int)
@@ -330,7 +331,7 @@ class _VehicleFlowDashboardService:
             "branch_id": branch_id,
             "stages": stage_nodes,
             "worst_bottleneck": worst_bottleneck,
-            "at_risk_alerts": [],
+            "at_risk_alerts": at_risk_alerts,
             "deviation_summary_note": (
                 f"Total deviations {deviation_report['summary']['total_deviations']} "
                 f"across {deviation_report['summary']['vehicles_with_deviations']} vehicles "
