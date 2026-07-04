@@ -188,7 +188,7 @@ class _StaffPerformanceService:
             "branch_id": branch_id,
             "total_captures": len(events),
             "per_individual": sorted(users_out, key=lambda x: x["capture_count"], reverse=True),
-            "per_role": sorted(roles_out, key=lambda x: x["capture_count"], reverse=True),
+            "per_role": sorted(roles_out, key=lambda x: x["total_captures"], reverse=True),
         }
 
 
