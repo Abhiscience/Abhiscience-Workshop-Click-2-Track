@@ -120,6 +120,24 @@ async def create_capture(
         db, normalized_plate, stage
     )
 
+    # Part D: if this is a vehicle entry-point stage and no match was found,
+    # create a PendingVehicle so a later Gate In capture can auto-link.
+    if (
+        stage.stage_code in ("SECURITY_GATE", "GATE_ENTRY")
+        and match_status == _match_status_value(MatchStatus.PENDING_NO_JC)
+        and normalized_plate
+    ):
+        pending = PendingVehicle(
+            temporary_plate_text=normalized_plate,
+            branch_id=stage.branch_id,
+            link_status=LinkStatus.PENDING.value,
+        )
+        db.add(pending)
+        await db.flush()
+        pending_vehicle_ref = pending.pending_vehicle_ref
+        match_status = _match_status_value(MatchStatus.PENDING_NO_JC)
+        match_method = "pending_created"
+
     event = CaptureEvent(
         stage_id=int(stage_id),
         user_id=current_user["user_id"],

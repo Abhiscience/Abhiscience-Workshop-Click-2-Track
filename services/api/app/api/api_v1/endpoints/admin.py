@@ -252,6 +252,73 @@ async def create_user(
     }
 
 
+@router.post("/create-job-card")
+async def admin_create_job_card(
+    external_job_card_no: str,
+    registration_number: str,
+    branch_id: int,
+    advisor_id: int | None = None,
+    make: str | None = None,
+    model: str | None = None,
+    color: str | None = None,
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Admin/QA convenience endpoint to create a job card and vehicle.
+
+    This is intended for testing and QA when no external DMS is available. In
+    production this can be restricted or disabled.
+    """
+    await _require_admin_role(admin["user_id"], db)
+
+    if not external_job_card_no or not external_job_card_no.strip():
+        raise HTTPException(status_code=400, detail="external_job_card_no is required")
+    if not registration_number or not registration_number.strip():
+        raise HTTPException(status_code=400, detail="registration_number is required")
+
+    normalized_plate = registration_number.upper().replace(" ", "").replace("-", "")
+
+    # Reuse existing vehicle if present.
+    vehicle_result = await db.execute(select(Vehicle).where(Vehicle.registration_number == normalized_plate))
+    vehicle = vehicle_result.scalar_one_or_none()
+    if not vehicle:
+        vehicle = Vehicle(
+            registration_number=normalized_plate,
+            make=make,
+            model=model,
+            color=color,
+        )
+        db.add(vehicle)
+        await db.flush()
+
+    existing_jc = await db.execute(select(JobCard).where(JobCard.external_job_card_no == external_job_card_no.strip()))
+    if existing_jc.scalars().first():
+        raise HTTPException(status_code=400, detail="A job card with that number already exists")
+
+    job_card = JobCard(
+        external_job_card_no=external_job_card_no.strip(),
+        vehicle_id=vehicle.vehicle_id,
+        branch_id=branch_id,
+        advisor_id=advisor_id,
+        status="OPEN",
+        open_time=datetime.utcnow(),
+    )
+    db.add(job_card)
+    await db.commit()
+    await db.refresh(job_card)
+
+    return {
+        "job_card_id": job_card.job_card_id,
+        "external_job_card_no": job_card.external_job_card_no,
+        "vehicle_id": vehicle.vehicle_id,
+        "registration_number": vehicle.registration_number,
+        "branch_id": job_card.branch_id,
+        "advisor_id": job_card.advisor_id,
+        "status": job_card.status,
+        "open_time": job_card.open_time.isoformat() if job_card.open_time else None,
+    }
+
+
 @router.get("/audit-trail")
 async def get_audit_trail(
     admin: dict = Depends(get_admin_user),
