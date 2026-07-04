@@ -85,6 +85,38 @@ CREATE TABLE IF NOT EXISTS cancellation_categories (
 CREATE INDEX IF NOT EXISTS idx_cancellation_categories_code
     ON cancellation_categories(category_code);
 
+-- Part E DDL - FRT catalog, job-card job types, parts_wait on capture_events
+
+CREATE TABLE IF NOT EXISTS frt_catalog (
+    frt_entry_id SERIAL PRIMARY KEY,
+    branch_id INTEGER REFERENCES branches(branch_id),
+    job_type_code VARCHAR(50) NOT NULL,
+    job_type_name VARCHAR(200) NOT NULL,
+    target_time_minutes INTEGER NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+CREATE INDEX IF NOT EXISTS idx_frt_catalog_branch_code
+    ON frt_catalog(branch_id, job_type_code);
+
+CREATE TABLE IF NOT EXISTS job_card_job_types (
+    id SERIAL PRIMARY KEY,
+    job_card_id INTEGER NOT NULL REFERENCES job_cards(job_card_id) ON DELETE CASCADE,
+    frt_entry_id INTEGER NOT NULL REFERENCES frt_catalog(frt_entry_id),
+    assigned_by_user_id INTEGER NOT NULL REFERENCES users(user_id),
+    assigned_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+    UNIQUE(job_card_id, frt_entry_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_jc_job_types_job_card
+    ON job_card_job_types(job_card_id);
+
+ALTER TABLE capture_events
+    ADD COLUMN IF NOT EXISTS parts_wait BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE capture_events
+    ADD COLUMN IF NOT EXISTS parts_wait_remark TEXT;
+
 -- Seed default cancellation categories (idempotent).
 INSERT INTO cancellation_categories (category_name, category_code, is_active) VALUES
     ('Customer refused zero bill', 'CUSTOMER_REFUSED_ZERO_BILL', TRUE),
@@ -93,3 +125,12 @@ INSERT INTO cancellation_categories (category_name, category_code, is_active) VA
     ('Duplicate entry', 'DUPLICATE_ENTRY', TRUE),
     ('Other', 'OTHER', TRUE)
 ON CONFLICT (category_code) DO NOTHING;
+
+-- Seed starter FRT catalog (idempotent).
+INSERT INTO frt_catalog (job_type_code, job_type_name, target_time_minutes, is_active) VALUES
+    ('BRAKE_PAD_REPLACEMENT', 'Brake pad replacement', 90, TRUE),
+    ('OIL_CHANGE', 'Oil change', 30, TRUE),
+    ('WHEEL_ALIGNMENT', 'Wheel alignment', 60, TRUE),
+    ('AC_SERVICE', 'A/C service', 120, TRUE),
+    ('GENERAL_SERVICE', 'General service', 150, TRUE)
+ON CONFLICT (job_type_code) DO NOTHING;

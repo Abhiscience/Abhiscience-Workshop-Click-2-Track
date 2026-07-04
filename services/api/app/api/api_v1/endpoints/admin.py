@@ -12,8 +12,8 @@ from app.providers.ocr_provider import get_ocr_provider
 from app.providers.dms_provider import get_dms_provider
 from app.core.security import decode_token, get_password_hash
 from app.core.database import get_db
-from app.models.models import Branch, CaptureEvent, JobCard, JobCategory, CancellationCategory, Role, User, Vehicle, WorkflowStage, OverrideRequest, OverrideRequestStatus, AppInstallation
-from app.schemas.schemas import OverrideRequestCreate, OverrideRequestResponse, CancellationCategoryCreate, CancellationCategory as CancellationCategorySchema, CancelledPartialWorkReport
+from app.models.models import Branch, CaptureEvent, JobCard, JobCategory, CancellationCategory, Role, User, Vehicle, WorkflowStage, OverrideRequest, OverrideRequestStatus, AppInstallation, FlatRateTimeCatalog, JobCardJobType
+from app.schemas.schemas import OverrideRequestCreate, OverrideRequestResponse, CancellationCategoryCreate, CancellationCategory as CancellationCategorySchema, CancelledPartialWorkReport, FlatRateTimeCatalogCreate, FlatRateTimeCatalog as FlatRateTimeCatalogSchema, JobCardJobTypeCreate, JobCardJobTypesResponse
 from app.services.push_service import send_push_notification, build_override_decision_title
 
 router = APIRouter()
@@ -317,6 +317,176 @@ async def admin_create_job_card(
         "advisor_id": job_card.advisor_id,
         "status": job_card.status,
         "open_time": job_card.open_time.isoformat() if job_card.open_time else None,
+    }
+
+
+@router.get("/frt-catalog")
+async def list_frt_catalog(
+    branch_id: int | None = None,
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """List admin-configurable flat-rate-time job types."""
+    await _require_admin_role(admin["user_id"], db)
+    stmt = select(FlatRateTimeCatalog).where(FlatRateTimeCatalog.is_active == True)
+    if branch_id:
+        stmt = stmt.where(
+            (FlatRateTimeCatalog.branch_id == branch_id) |
+            (FlatRateTimeCatalog.branch_id.is_(None))
+        )
+    stmt = stmt.order_by(FlatRateTimeCatalog.job_type_name)
+    result = await db.execute(stmt)
+    return {"items": result.scalars().all()}
+
+
+@router.post("/frt-catalog", response_model=FlatRateTimeCatalogSchema)
+async def create_frt_catalog_entry(
+    data: FlatRateTimeCatalogCreate,
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new FRT catalog entry."""
+    await _require_admin_role(admin["user_id"], db)
+    entry = FlatRateTimeCatalog(**data.model_dump())
+    db.add(entry)
+    await db.commit()
+    await db.refresh(entry)
+    return entry
+
+
+@router.post("/frt-catalog/seed")
+async def seed_frt_catalog(
+    branch_id: int | None = None,
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Seed a starter FRT catalog for QA/testing."""
+    await _require_admin_role(admin["user_id"], db)
+    defaults = [
+        ("BRAKE_PAD_REPLACEMENT", "Brake pad replacement", 90),
+        ("OIL_CHANGE", "Oil change", 30),
+        ("WHEEL_ALIGNMENT", "Wheel alignment", 60),
+        ("AC_SERVICE", "A/C service", 120),
+        ("GENERAL_SERVICE", "General service", 150),
+    ]
+    created = 0
+    for code, name, minutes in defaults:
+        existing = await db.execute(
+            select(FlatRateTimeCatalog).where(
+                FlatRateTimeCatalog.job_type_code == code,
+                FlatRateTimeCatalog.branch_id == branch_id,
+            )
+        )
+        if not existing.scalars().first():
+            db.add(FlatRateTimeCatalog(
+                branch_id=branch_id,
+                job_type_code=code,
+                job_type_name=name,
+                target_time_minutes=minutes,
+                is_active=True,
+            ))
+            created += 1
+    if created:
+        await db.commit()
+    return {"status": "seeded", "created": created}
+
+
+@router.post("/job-card-assign-job-types", response_model=JobCardJobTypesResponse)
+async def assign_job_types_to_job_card(
+    data: JobCardJobTypeCreate,
+    current_user: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Assign FRT job types to a job card at TECH_ASSIGNED (typically by Floor In-Charge).
+
+    Replaces any existing assignment.
+    """
+    await _require_admin_role(current_user["user_id"], db)
+
+    jc_result = await db.execute(select(JobCard).where(JobCard.job_card_id == data.job_card_id))
+    job_card = jc_result.scalar_one_or_none()
+    if not job_card:
+        raise HTTPException(status_code=404, detail="Job card not found")
+
+    # Remove existing
+    await db.execute(
+        future_select(JobCardJobType).where(JobCardJobType.job_card_id == data.job_card_id)
+    )
+    existing_result = await db.execute(select(JobCardJobType).where(JobCardJobType.job_card_id == data.job_card_id))
+    for row in existing_result.scalars().all():
+        await db.delete(row)
+
+    entries = []
+    for frt_id in data.frt_entry_ids:
+        frt_result = await db.execute(
+            select(FlatRateTimeCatalog).where(FlatRateTimeCatalog.frt_entry_id == frt_id)
+        )
+        if not frt_result.scalars().first():
+            raise HTTPException(status_code=400, detail=f"frt_entry_id {frt_id} not found")
+        entry = JobCardJobType(
+            job_card_id=data.job_card_id,
+            frt_entry_id=frt_id,
+            assigned_by_user_id=current_user["user_id"],
+        )
+        db.add(entry)
+        entries.append(entry)
+
+    await db.commit()
+
+    entries_result = await db.execute(
+        select(JobCardJobType, FlatRateTimeCatalog)
+        .join(FlatRateTimeCatalog, JobCardJobType.frt_entry_id == FlatRateTimeCatalog.frt_entry_id)
+        .where(JobCardJobType.job_card_id == data.job_card_id)
+    )
+    rows = entries_result.all()
+    job_types = [
+        {
+            "frt_entry_id": j.frt_entry_id,
+            "job_type_code": f.job_type_code,
+            "job_type_name": f.job_type_name,
+            "target_time_minutes": f.target_time_minutes,
+            "assigned_by_user_id": j.assigned_by_user_id,
+            "assigned_at": j.assigned_at,
+        }
+        for j, f in rows
+    ]
+    return {
+        "job_card_id": data.job_card_id,
+        "total_target_time_minutes": sum(jt["target_time_minutes"] for jt in job_types),
+        "job_types": job_types,
+    }
+
+
+@router.get("/job-card-job-types/{job_card_id}", response_model=JobCardJobTypesResponse)
+async def get_job_card_job_types(
+    job_card_id: int,
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get assigned FRT job types for a job card."""
+    await _require_admin_role(admin["user_id"], db)
+
+    result = await db.execute(
+        select(JobCardJobType, FlatRateTimeCatalog)
+        .join(FlatRateTimeCatalog, JobCardJobType.frt_entry_id == FlatRateTimeCatalog.frt_entry_id)
+        .where(JobCardJobType.job_card_id == job_card_id)
+    )
+    rows = result.all()
+    job_types = [
+        {
+            "frt_entry_id": j.frt_entry_id,
+            "job_type_code": f.job_type_code,
+            "job_type_name": f.job_type_name,
+            "target_time_minutes": f.target_time_minutes,
+            "assigned_by_user_id": j.assigned_by_user_id,
+            "assigned_at": j.assigned_at,
+        }
+        for j, f in rows
+    ]
+    return {
+        "job_card_id": job_card_id,
+        "total_target_time_minutes": sum(jt["target_time_minutes"] for jt in job_types),
+        "job_types": job_types,
     }
 
 

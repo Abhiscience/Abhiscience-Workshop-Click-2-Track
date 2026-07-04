@@ -9,8 +9,8 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.models.models import CaptureEvent, LinkStatus, MatchStatus, PendingVehicle, WorkflowStage, JobCategory, User, AppInstallation, Role, OverrideRequest, OverrideRequestStatus, JobCard, Vehicle
-from app.schemas.schemas import CaptureEventCreate, CaptureEvent as CaptureEventSchema, OverrideRequestCreate, OverrideRequestResponse, CaptureEventVoidRequest
+from app.models.models import CaptureEvent, LinkStatus, MatchStatus, PendingVehicle, WorkflowStage, JobCategory, User, AppInstallation, Role, OverrideRequest, OverrideRequestStatus, JobCard, Vehicle, FlatRateTimeCatalog
+from app.schemas.schemas import CaptureEventCreate, CaptureEvent as CaptureEventSchema, OverrideRequestCreate, OverrideRequestResponse, CaptureEventVoidRequest, FlatRateTimeCatalogCreate, FlatRateTimeCatalog as FlatRateTimeCatalogSchema
 from app.core.security import decode_token
 from app.providers.ocr_provider import get_ocr_provider
 from app.providers.anpr_provider import normalize_plate
@@ -76,8 +76,10 @@ def _is_role_allowed(user: User, stage: WorkflowStage) -> bool:
 @router.post("/", response_model=CaptureEventSchema)
 async def create_capture(
     stage_id: str,
-    remarks: str = None,
-    work_done_category_id: int = None,
+    remarks: str | None = None,
+    work_done_category_id: int | None = None,
+    parts_wait: bool = False,
+    parts_wait_remark: str | None = None,
     image: UploadFile = File(...),  # Part D: mandatory image
     plate_text: str = None,
     current_user: dict = Depends(get_current_user),
@@ -94,6 +96,12 @@ async def create_capture(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This stage is role-locked. Submit an override request with reason."
         )
+
+    # Validate parts-wait is only used on PARTS_ISSUED stage.
+    if parts_wait and stage.stage_code != "PARTS_ISSUED":
+        raise HTTPException(status_code=400, detail="parts_wait flag is only valid for PARTS_ISSUED stage")
+    if parts_wait and not parts_wait_remark:
+        raise HTTPException(status_code=400, detail="parts_wait_remark is required when flag is set")
 
     # Work-Finished stage additionally requires a work-done category selection
     is_work_finished = (stage.sequence_order == 6) or (stage.stage_code == "WORK_FINISHED")
@@ -155,6 +163,8 @@ async def create_capture(
         captured_at_device=datetime.utcnow(),
         remarks=remarks,
         work_done_category_id=work_done_category_id,
+        parts_wait=parts_wait,
+        parts_wait_remark=parts_wait_remark,
     )
 
     db.add(event)

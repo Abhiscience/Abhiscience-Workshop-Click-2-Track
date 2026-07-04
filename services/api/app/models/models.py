@@ -159,6 +159,9 @@ class CaptureEvent(Base):
     voided_by = Column(Integer, ForeignKey("users.user_id"), nullable=True)
     void_reason = Column(Text, nullable=True)
     corrected_event_id = Column(Integer, ForeignKey("capture_events.event_id"), nullable=True)
+    # Part E
+    parts_wait = Column(Boolean, default=False)    # waiting for parts — not available
+    parts_wait_remark = Column(Text, nullable=True)
     
     stage = relationship("WorkflowStage")
     user = relationship("User", foreign_keys=[user_id])
@@ -203,6 +206,32 @@ class JobCategory(Base):
     captures = relationship("CaptureEvent", back_populates="work_done_category")
 
 
+class FlatRateTimeCatalog(Base):
+    """Part E: standard target times per job type, configurable per branch."""
+    __tablename__ = "frt_catalog"
+
+    frt_entry_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    branch_id = Column(Integer, ForeignKey("branches.branch_id"), nullable=True)
+    job_type_code = Column(String(50), nullable=False)  # e.g. BRAKE_PAD_REPLACEMENT
+    job_type_name = Column(String(200), nullable=False)   # e.g. Brake pad replacement
+    target_time_minutes = Column(Integer, nullable=False)  # e.g. 90
+    is_active = Column(Boolean, default=True)
+
+
+class JobCardJobType(Base):
+    """Part E: job types assigned to a specific job card at TECH_ASSIGNED."""
+    __tablename__ = "job_card_job_types"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    job_card_id = Column(Integer, ForeignKey("job_cards.job_card_id"), nullable=False)
+    frt_entry_id = Column(Integer, ForeignKey("frt_catalog.frt_entry_id"), nullable=False)
+    assigned_by_user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
+    assigned_at = Column(DateTime, default=datetime.utcnow)
+
+    job_card = relationship("JobCard", back_populates="job_types")
+    frt_entry = relationship("FlatRateTimeCatalog")
+
+
 class CancellationCategory(Base):
     __tablename__ = "cancellation_categories"
 
@@ -216,6 +245,7 @@ class CancellationCategory(Base):
 
 
 JobCard.cancellation_category = relationship("CancellationCategory", back_populates="job_cards")
+JobCard.job_types = relationship("JobCardJobType", back_populates="job_card")
 
 
 class OverrideRequest(Base):

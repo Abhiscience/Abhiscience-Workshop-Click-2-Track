@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Apply Part B/D migration using SQLAlchemy metadata.
+"""Apply Part B/D/E migration using SQLAlchemy metadata.
 
-This script creates the override_requests table, job_card_not_applicable_stages,
-and any missing columns.  It is idempotent and safe to run against PostgreSQL or
-SQLite (note: column-adding SQL is only executed when the column is missing).
+Creates override_requests, job_card_not_applicable_stages, cancellation_categories,
+frt_catalog, job_card_job_types tables, and adds any missing columns. Idempotent.
 """
 import asyncio
 import os
@@ -34,7 +33,7 @@ async def main():
                 if col_name not in cols:
                     sync_conn.execute(text(col_sql))
 
-            # capture_events (Part D correction mechanism)
+            # capture_events (Part D correction mechanism + Part E parts-wait)
             ce_cols = {c["name"] for c in inspector.get_columns("capture_events")}
             for col_name, col_sql in (
                 ("voided", "ALTER TABLE capture_events ADD COLUMN voided BOOLEAN NOT NULL DEFAULT FALSE"),
@@ -42,6 +41,8 @@ async def main():
                 ("voided_by", "ALTER TABLE capture_events ADD COLUMN voided_by INTEGER REFERENCES users(user_id)"),
                 ("void_reason", "ALTER TABLE capture_events ADD COLUMN void_reason TEXT"),
                 ("corrected_event_id", "ALTER TABLE capture_events ADD COLUMN corrected_event_id INTEGER REFERENCES capture_events(event_id)"),
+                ("parts_wait", "ALTER TABLE capture_events ADD COLUMN parts_wait BOOLEAN NOT NULL DEFAULT FALSE"),
+                ("parts_wait_remark", "ALTER TABLE capture_events ADD COLUMN parts_wait_remark TEXT"),
             ):
                 if col_name not in ce_cols:
                     sync_conn.execute(text(col_sql))
@@ -53,10 +54,17 @@ async def main():
             if "cancellation_category_id" not in jc_cols:
                 sync_conn.execute(text("ALTER TABLE job_cards ADD COLUMN cancellation_category_id INTEGER REFERENCES cancellation_categories(cancellation_category_id)"))
 
+            # Part E: ensure target_time_minutes column on frt_catalog exists
+            # if the table was created from metadata, this is a no-op.
+            if "frt_catalog" in inspector.get_table_names():
+                frt_cols = {c["name"] for c in inspector.get_columns("frt_catalog")}
+                if "target_time_minutes" not in frt_cols:
+                    sync_conn.execute(text("ALTER TABLE frt_catalog ADD COLUMN target_time_minutes INTEGER NOT NULL DEFAULT 0"))
+
         await conn.run_sync(ensure_additional_columns)
 
     await engine.dispose()
-    print("Part B/D migration applied successfully.")
+    print("Part B/D/E migration applied successfully.")
 
 
 if __name__ == "__main__":

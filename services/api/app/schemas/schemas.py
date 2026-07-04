@@ -106,6 +106,8 @@ class CaptureEvent(CaptureEventBase):
     match_status: MatchStatus
     captured_at_device: Optional[datetime]
     received_at_server: Optional[datetime]
+    parts_wait: Optional[bool]
+    parts_wait_remark: Optional[str]
 
     class Config:
         from_attributes = True
@@ -307,6 +309,43 @@ class CancellationCategory(CancellationCategoryBase):
         from_attributes = True
 
 
+# FRT catalog schemas
+class FlatRateTimeCatalogBase(BaseModel):
+    branch_id: Optional[int] = None
+    job_type_code: str
+    job_type_name: str
+    target_time_minutes: int
+    is_active: Optional[bool] = True
+
+class FlatRateTimeCatalogCreate(FlatRateTimeCatalogBase):
+    pass
+
+class FlatRateTimeCatalog(FlatRateTimeCatalogBase):
+    frt_entry_id: int
+
+    class Config:
+        from_attributes = True
+
+
+# Job-card job-type assignment schemas
+class JobCardJobTypeCreate(BaseModel):
+    job_card_id: int
+    frt_entry_ids: List[int]
+
+class JobCardJobTypeEntry(BaseModel):
+    frt_entry_id: int
+    job_type_code: str
+    job_type_name: str
+    target_time_minutes: int
+    assigned_by_user_id: int
+    assigned_at: datetime
+
+class JobCardJobTypesResponse(BaseModel):
+    job_card_id: int
+    total_target_time_minutes: int
+    job_types: List[JobCardJobTypeEntry]
+
+
 # Cancelled partial-work report schemas
 class PartialWorkCaptureEvent(BaseModel):
     event_id: int
@@ -320,6 +359,7 @@ class PartialWorkCaptureEvent(BaseModel):
     time_logged_minutes: float
     remarks: Optional[str]
 
+
 class PartialWorkTechnicianSummary(BaseModel):
     user_id: int
     user_name: str
@@ -327,6 +367,7 @@ class PartialWorkTechnicianSummary(BaseModel):
     event_count: int
     total_time_minutes: float
     events: List[PartialWorkCaptureEvent]
+
 
 class CancelledJobPartialWork(BaseModel):
     job_card_id: int
@@ -343,7 +384,46 @@ class CancelledJobPartialWork(BaseModel):
     total_capture_time_minutes: float
     event_count: int
 
+
 class CancelledPartialWorkReport(BaseModel):
     items: List[CancelledJobPartialWork]
     total_items: int
 
+
+# Technician time cycle report schemas
+class CycleStageEvent(BaseModel):
+    event_id: int
+    stage_code: str
+    stage_name: Optional[str]
+    user_id: Optional[int]
+    user_name: Optional[str]
+    role_name: Optional[str]
+    captured_at: Optional[datetime]
+
+
+class TechnicianCycle(BaseModel):
+    cycle_number: int
+    started_at: Optional[datetime]
+    finished_at: Optional[datetime]
+    technician_id: Optional[int]
+    technician_name: Optional[str]
+    total_minutes: float
+    parts_wait_minutes: float
+    net_work_minutes: float
+    stage_events: List[CycleStageEvent]
+
+
+class QcWaitWindow(BaseModel):
+    ready_for_qc_at: Optional[datetime]
+    pre_road_test_qc_at: Optional[datetime]
+    qc_wait_minutes: float
+
+
+class JobCardCycleReport(BaseModel):
+    job_card_id: int
+    external_job_card_no: str
+    registration_number: Optional[str]
+    total_target_time_minutes: Optional[int]
+    cycles: List[TechnicianCycle]
+    qc_wait_windows: List[QcWaitWindow]
+    total_parts_wait_minutes: float

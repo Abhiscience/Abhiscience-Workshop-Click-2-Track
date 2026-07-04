@@ -8,7 +8,7 @@ from datetime import datetime, date, timedelta
 from collections import defaultdict
 from app.core.database import get_db
 from app.core.security import decode_token
-from app.schemas.schemas import UtilizationMetrics
+from app.schemas.schemas import UtilizationMetrics, JobCardCycleReport
 from app.models.models import CaptureEvent, WorkflowStage, Vehicle, JobCard, User, Branch, PendingVehicle
 
 router = APIRouter()
@@ -366,6 +366,24 @@ async def get_morning_meeting_deviations(
 
     target_date = _parse_date(date)
     report = await build_morning_meeting_report(db, target_date, branch_id)
+    return report
+
+
+@router.get("/dashboard/job-card-cycles/{job_card_id}", response_model=JobCardCycleReport)
+async def get_job_card_cycles(
+    job_card_id: int,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Part E: per-job-card technician cycles, parts-wait, and QC wait.
+
+    Cycles are split by WORK_STARTED. Rework is expected, not a deviation.
+    """
+    from app.services.technician_time_service import _TechnicianTimeService
+
+    report = await _TechnicianTimeService.build_report(db, job_card_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Job card not found")
     return report
 
 
