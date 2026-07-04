@@ -34,7 +34,7 @@ async def get_current_user(request: Request) -> dict:
 
 
 async def _require_admin_or_advisor(current_user: dict, db: AsyncSession):
-    user_result = await db.execute(select(User).where(User.user_id == current_user["user_id"]))
+    user_result = await db.execute(select(User).options(joinedload(User.role)).where(User.user_id == current_user["user_id"]))
     user = user_result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
