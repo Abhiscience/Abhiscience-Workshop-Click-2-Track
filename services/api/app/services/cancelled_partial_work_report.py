@@ -23,14 +23,16 @@ class _CancelledPartialWorkReportBuilder:
         *,
         branch_id: int | None = None,
         cancellation_category_id: int | None = None,
+        statuses: list[str] | None = None,
     ):
+        target_statuses = statuses or ["CANCELLED"]
         stmt = (
             select(JobCard)
             .options(
                 joinedload(JobCard.vehicle),
                 joinedload(JobCard.cancellation_category),
             )
-            .where(JobCard.status == "CANCELLED")
+            .where(JobCard.status.in_(target_statuses))
         )
         if branch_id:
             stmt = stmt.where(JobCard.branch_id == branch_id)
@@ -117,34 +119,17 @@ class _CancelledPartialWorkReportBuilder:
                     "events": bucket["events"],
                 })
 
-            cancel_event_result = await db.execute(
-                select(CaptureEvent.user_id)
-                .where(
-                    CaptureEvent.job_card_id == jc.job_card_id,
-                    CaptureEvent.voided == False,
-                )
-                .order_by(CaptureEvent.received_at_server.desc())
-                .limit(1)
-            )
-            cancelled_by = cancel_event_result.scalar() or jc.advisor_id
-            cancelled_by_name = None
-            if cancelled_by:
-                u = await db.execute(select(User).where(User.user_id == cancelled_by))
-                user = u.scalar_one_or_none()
-                cancelled_by_name = user.name if user else None
-
             items.append({
                 "job_card_id": jc.job_card_id,
                 "external_job_card_no": jc.external_job_card_no,
                 "registration_number": jc.vehicle.registration_number if jc.vehicle else None,
                 "vehicle_id": jc.vehicle_id,
                 "branch_id": jc.branch_id,
+                "status": jc.status,
                 "cancellation_category_id": jc.cancellation_category_id,
                 "cancellation_category_name": jc.cancellation_category.category_name if jc.cancellation_category else None,
                 "cancellation_reason": jc.cancellation_reason,
-                "cancelled_at": jc.close_time,
-                "cancelled_by": cancelled_by,
-                "cancelled_by_name": cancelled_by_name,
+                "closed_at": jc.close_time,
                 "technician_summary": technician_summary,
                 "total_capture_time_minutes": round(total_capture_time, 2),
                 "event_count": len(events),

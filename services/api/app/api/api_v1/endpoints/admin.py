@@ -9,6 +9,7 @@ import re
 from datetime import datetime
 
 from app.providers.ocr_provider import get_ocr_provider
+from app.providers.dms_provider import get_dms_provider
 from app.core.security import decode_token, get_password_hash
 from app.core.database import get_db
 from app.models.models import Branch, CaptureEvent, JobCard, JobCategory, CancellationCategory, Role, User, Vehicle, WorkflowStage, OverrideRequest, OverrideRequestStatus, AppInstallation
@@ -600,18 +601,88 @@ async def seed_cancellation_categories(
 async def cancelled_partial_work_report(
     branch_id: int | None = None,
     cancellation_category_id: int | None = None,
+    include_zero_billed: bool = True,
     admin: dict = Depends(get_admin_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Service-manager/admin only: cancelled jobs where real capture work was
-    logged before cancellation. Not exposed to technicians' personal stats."""
+    logged before cancellation. Optionally include zero-billed jobs."""
     await _require_admin_role(admin["user_id"], db)
 
     from app.services.cancelled_partial_work_report import _CancelledPartialWorkReportBuilder
+    statuses = ["CANCELLED"]
+    if include_zero_billed:
+        statuses.append("ZERO_BILLED")
     items = await _CancelledPartialWorkReportBuilder.build(
-        db, branch_id=branch_id, cancellation_category_id=cancellation_category_id
+        db,
+        branch_id=branch_id,
+        cancellation_category_id=cancellation_category_id,
+        statuses=statuses,
     )
     return {"items": items, "total_items": len(items)}
+
+
+@router.post("/reconcile-dms")
+async def reconcile_dms(
+    job_card_id: int,
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Fetch DMS billing data for a job card and mark it ZERO_BILLED when the
+    DMS reports a BILLED status with a zero amount.
+
+    A real DMS integration will replace the mock provider; this endpoint
+    performs the reconciliation logic regardless of provider backend.
+    """
+    await _require_admin_role(admin["user_id"], db)
+
+    result = await db.execute(select(JobCard).where(JobCard.job_card_id == job_card_id))
+    job_card = result.scalar_one_or_none()
+    if not job_card:
+        raise HTTPException(status_code=404, detail="Job card not found")
+
+    if job_card.status in ("CANCELLED", "ZERO_BILLED"):
+        raise HTTPException(status_code=400, detail="Job card is already in a terminal state")
+
+    provider = get_dms_provider()
+    try:
+        billing = await provider.lookup_billing_info(job_card.external_job_card_no)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"DMS lookup failed: {exc}")
+
+    if billing.dms_status == "BILLED" and billing.bill_amount == 0.0:
+        job_card.status = "ZERO_BILLED"
+        job_card.close_time = datetime.utcnow()
+    elif billing.dms_status == "CANCELLED":
+        # Real DMS says cancelled; keep existing cancel flow, preserving reason/category if present.
+        job_card.status = "CANCELLED"
+        job_card.close_time = datetime.utcnow()
+        if not job_card.cancellation_reason:
+            job_card.cancellation_reason = "Cancelled in DMS"
+        if not job_card.cancellation_category_id:
+            other = await db.execute(
+                select(CancellationCategory).where(CancellationCategory.category_code == "OTHER")
+            )
+            other_cat = other.scalar_one_or_none()
+            if other_cat:
+                job_card.cancellation_category_id = other_cat.cancellation_category_id
+    else:
+        return {
+            "job_card_id": job_card.job_card_id,
+            "reconciled": False,
+            "dms_status": billing.dms_status,
+            "bill_amount": billing.bill_amount,
+            "job_card_status": job_card.status,
+        }
+
+    await db.commit()
+    return {
+        "job_card_id": job_card.job_card_id,
+        "reconciled": True,
+        "dms_status": billing.dms_status,
+        "bill_amount": billing.bill_amount,
+        "job_card_status": job_card.status,
+    }
 
 
 @router.get("/override-requests", response_model=list[OverrideRequestResponse])

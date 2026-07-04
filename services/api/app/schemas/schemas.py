@@ -334,12 +334,11 @@ class CancelledJobPartialWork(BaseModel):
     registration_number: Optional[str]
     vehicle_id: Optional[int]
     branch_id: Optional[int]
+    status: str
     cancellation_category_id: Optional[int]
     cancellation_category_name: Optional[str]
     cancellation_reason: Optional[str]
-    cancelled_at: Optional[datetime]
-    cancelled_by: Optional[int]
-    cancelled_by_name: Optional[str]
+    closed_at: Optional[datetime]
     technician_summary: List[PartialWorkTechnicianSummary]
     total_capture_time_minutes: float
     event_count: int

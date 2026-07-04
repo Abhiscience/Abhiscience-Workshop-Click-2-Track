@@ -73,7 +73,7 @@ async def get_live_workshop_status(
         .where(or_(CaptureEvent.job_card_id.isnot(None), CaptureEvent.pending_vehicle_ref.isnot(None)))
         .where(CaptureEvent.voided == False)
         .outerjoin(JobCard, CaptureEvent.job_card_id == JobCard.job_card_id)
-        .where(or_(CaptureEvent.job_card_id.is_(None), JobCard.status != "CANCELLED"))
+        .where(or_(CaptureEvent.job_card_id.is_(None), JobCard.status.notin_(["CANCELLED", "ZERO_BILLED"])))
         .group_by(CaptureEvent.job_card_id, CaptureEvent.pending_vehicle_ref)
         .subquery()
     )
@@ -107,8 +107,8 @@ async def get_live_workshop_status(
         if not stage or event.stage_id in exit_stages:
             continue
 
-        # Skip completed job cards
-        if job_card and job_card.status in ("CLOSED", "COMPLETED", "CANCELLED"):
+        # Skip completed / cancelled / zero-billed job cards
+        if job_card and job_card.status in ("CLOSED", "COMPLETED", "CANCELLED", "ZERO_BILLED"):
             continue
 
         wait_minutes = (now - event.received_at_server).total_seconds() / 60.0 if event.received_at_server else 0
@@ -175,7 +175,10 @@ async def get_utilization_metrics(
     ).where(
         CaptureEvent.received_at_server >= start,
         CaptureEvent.received_at_server < end,
-        or_(CaptureEvent.job_card_id.is_(None), JobCard.status != "CANCELLED")
+        or_(
+            CaptureEvent.job_card_id.is_(None),
+            JobCard.status.notin_(["CANCELLED", "ZERO_BILLED"])
+        )
     ).where(
         CaptureEvent.voided == False
     )
@@ -309,11 +312,11 @@ async def get_manpower_summary(
     result = await db.execute(stmt)
     counts_rows = result.all()
 
-    # Exclude captures from cancelled job cards from per-user productivity counts,
-    # but keep counts from non-cancelled jobs and unmatched captures.
+    # Exclude captures from cancelled and zero-billed job cards from per-user productivity counts,
+    # but keep counts from non-cancelled/non-zero-billed jobs and unmatched captures.
     counts = {}
     for row in counts_rows:
-        if row.job_card_status != "CANCELLED":
+        if row.job_card_status not in ("CANCELLED", "ZERO_BILLED"):
             counts[row.user_id] = counts.get(row.user_id, 0) + row.capture_count
 
     # Enrich with user details
@@ -392,7 +395,10 @@ async def get_deviation_summary(
     ).outerjoin(
         JobCard, CaptureEvent.job_card_id == JobCard.job_card_id
     ).where(
-        or_(CaptureEvent.job_card_id.is_(None), JobCard.status != "CANCELLED")
+        or_(
+            CaptureEvent.job_card_id.is_(None),
+            JobCard.status.notin_(["CANCELLED", "ZERO_BILLED"])
+        )
     ).order_by(CaptureEvent.received_at_server)
     event_result = await db.execute(event_stmt)
     events = event_result.scalars().all()
