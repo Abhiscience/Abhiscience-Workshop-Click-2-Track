@@ -6,7 +6,7 @@ from sqlalchemy.future import select as future_select
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import IntegrityError
 import re
-from datetime import datetime
+from datetime import datetime, date
 
 from app.providers.ocr_provider import get_ocr_provider
 from app.providers.dms_provider import get_dms_provider
@@ -502,7 +502,7 @@ async def get_job_card_job_types(
 @router.get("/suspicious-captures", response_model=SuspiciousCaptureReviewResponse)
 async def suspicious_captures_review(
     branch_id: int,
-    date: datetime.date | None = None,
+    date: date | None = None,
     admin: dict = Depends(get_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
