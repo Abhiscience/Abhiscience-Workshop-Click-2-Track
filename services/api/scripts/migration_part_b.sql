@@ -146,6 +146,45 @@ INSERT INTO cancellation_categories (category_name, category_code, is_active) VA
     ('Other', 'OTHER', TRUE)
 ON CONFLICT (category_code) DO NOTHING;
 
+-- Part F DDL - team targets, shifts, demo revenue
+CREATE TABLE IF NOT EXISTS staff_targets (
+    staff_target_id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    branch_id INTEGER REFERENCES branches(branch_id) ON DELETE SET NULL,
+    target_year INTEGER NOT NULL,
+    target_month INTEGER NOT NULL,
+    vehicle_target_count INTEGER,
+    daily_vehicle_target_count INTEGER,
+    monthly_revenue_target NUMERIC(12,2),
+    created_by_user_id INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+    UNIQUE(user_id, target_year, target_month, branch_id)
+);
+
+CREATE TABLE IF NOT EXISTS user_shifts (
+    user_shift_id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    branch_id INTEGER REFERENCES branches(branch_id) ON DELETE SET NULL,
+    shift_date DATE NOT NULL,
+    shift_start TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+    shift_end TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+    break_minutes INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS demo_revenue_entries (
+    demo_revenue_id SERIAL PRIMARY KEY,
+    external_job_card_no VARCHAR(100),
+    user_id INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+    branch_id INTEGER REFERENCES branches(branch_id) ON DELETE SET NULL,
+    revenue_amount NUMERIC(12,2) NOT NULL,
+    revenue_currency VARCHAR(10) NOT NULL DEFAULT 'INR',
+    revenue_date DATE NOT NULL,
+    notes TEXT NOT NULL DEFAULT 'DEMO DATA - NOT REAL REVENUE',
+    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+);
+
 -- Seed starter FRT catalog (idempotent).
 INSERT INTO frt_catalog (job_type_code, job_type_name, target_time_minutes, is_active) VALUES
     ('BRAKE_PAD_REPLACEMENT', 'Brake pad replacement', 90, TRUE),

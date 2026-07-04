@@ -8,7 +8,13 @@ from datetime import datetime, date, timedelta
 from collections import defaultdict
 from app.core.database import get_db
 from app.core.security import decode_token
-from app.schemas.schemas import UtilizationMetrics, JobCardCycleReport
+from app.schemas.schemas import (
+    UtilizationMetrics, JobCardCycleReport,
+)
+from app.schemas.schemas_partf import (
+    VehicleFlowResponse, StaffPerformanceResponse, StaffUtilizationRow,
+    PartsShortagePatterns, ReworkRateReport, AIActionPlanResponse,
+)
 from app.models.models import CaptureEvent, WorkflowStage, Vehicle, JobCard, User, Branch, PendingVehicle
 
 router = APIRouter()
@@ -116,6 +122,21 @@ async def get_live_workshop_status(
         vehicles_by_stage[stage.stage_name] += 1
 
         reg_number = vehicle.registration_number if vehicle else (event.plate_text_normalized or event.plate_text_raw or "Unknown")
+
+        # At-risk flag for live dashboard
+        at_risk = False
+        excess_minutes = 0
+        target_minutes = None
+        if job_card:
+            from app.services.technician_time_service import _TechnicianTimeService
+            report = await _TechnicianTimeService.build_report(db, job_card.job_card_id)
+            if report:
+                target_minutes = report.get("total_target_time_minutes")
+                total_work = sum((c.get("net_work_minutes") or 0) for c in report.get("cycles", []))
+                if target_minutes and total_work > target_minutes:
+                    at_risk = True
+                    excess_minutes = round(total_work - target_minutes, 1)
+
         active_vehicles.append({
             "job_card_id": job_card.job_card_id if job_card else None,
             "pending_vehicle_ref": event.pending_vehicle_ref,
@@ -127,6 +148,9 @@ async def get_live_workshop_status(
             "user_name": user.name if user else None,
             "branch_name": branch.branch_name if branch else None,
             "image_url": event.image_url,
+            "at_risk_exceeding_frt": at_risk,
+            "excess_minutes": excess_minutes,
+            "target_minutes": target_minutes,
         })
 
     average_wait_times = {
@@ -387,86 +411,165 @@ async def get_job_card_cycles(
     return report
 
 
-@router.get("/dashboard/deviation-summary")
-async def get_deviation_summary(
+@router.get("/dashboard/vehicle-flow", response_model=VehicleFlowResponse)
+async def vehicle_flow_dashboard(
     branch_id: int = None,
-    date: str = None,
+    start_date: str = None,
+    end_date: str = None,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Compare actual capture sequence per vehicle against expected workflow stage order."""
+    """Real vehicle-flow dashboard (oval/loop concept): live stage-level flow,
+    deviations flags, and current worst bottleneck callout. Filterable by date
+    range for month-end review.
+    """
+    from app.services.staff_performance_service import _StaffPerformanceService
+    end_dt = _parse_date(end_date) if end_date else datetime.utcnow().date()
+    start_dt = _parse_date(start_date) if start_date else end_dt - timedelta(days=30)
+    start = datetime.combine(start_dt, datetime.min.time())
+    end = datetime.combine(end_dt, datetime.max.time())
+
+    flow = await _StaffPerformanceService.vehicle_flow_summary(
+        db, start, end, branch_id=branch_id
+    )
+    return flow
+
+
+@router.get("/dashboard/staff-performance", response_model=StaffPerformanceResponse)
+async def staff_performance_dashboard(
+    start_date: str = None,
+    end_date: str = None,
+    branch_id: int = None,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Per-individual and per-role rollups: captures, vehicles handled,
+    cumulative technician time. Fully generic for any user/role.
+    """
+    from app.services.staff_performance_service import _StaffPerformanceService
+    end_dt = _parse_date(end_date) if end_date else datetime.utcnow().date()
+    start_dt = _parse_date(start_date) if start_date else end_dt - timedelta(days=30)
+    start = datetime.combine(start_dt, datetime.min.time())
+    end = datetime.combine(end_dt, datetime.max.time())
+
+    rollup = await _StaffPerformanceService.rollup(
+        db, start, end, branch_id=branch_id
+    )
+    return rollup
+
+
+@router.get("/dashboard/parts-shortage-patterns", response_model=PartsShortagePatterns)
+async def parts_shortage_patterns(
+    start_date: str = None,
+    end_date: str = None,
+    branch_id: int = None,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Aggregate parts-wait remarks to surface recurring parts delay patterns."""
+    from app.services.staff_performance_service import _StaffPerformanceService
+    end_dt = _parse_date(end_date) if end_date else datetime.utcnow().date()
+    start_dt = _parse_date(start_date) if start_date else end_dt - timedelta(days=30)
+    start = datetime.combine(start_dt, datetime.min.time())
+    end = datetime.combine(end_dt, datetime.max.time())
+
+    patterns = await _StaffPerformanceService.parts_shortage_patterns(
+        db, start, end, branch_id=branch_id
+    )
+    return patterns
+
+
+@router.get("/dashboard/staff-utilization", response_model=List[StaffUtilizationRow])
+async def staff_utilization_dashboard(
+    date: str = None,
+    branch_id: int = None,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Active technician time vs shift time, per staff member on a given date."""
+    from app.services.staff_performance_service import _StaffPerformanceService
     target_date = _parse_date(date)
-    start, end = _date_range_bounds(target_date)
+    start = datetime.combine(target_date, datetime.min.time())
+    end = start + timedelta(days=1)
 
-    # Expected order
-    stage_stmt = select(WorkflowStage).options(joinedload(WorkflowStage.role)).order_by(WorkflowStage.sequence_order)
-    if branch_id:
-        stage_stmt = stage_stmt.where(WorkflowStage.branch_id == branch_id)
-    stage_result = await db.execute(stage_stmt)
-    stages = stage_result.scalars().all()
-    expected_order = {s.stage_id: (s.sequence_order or 0) for s in stages}
+    rows = await _StaffPerformanceService.staff_utilization(
+        db, target_date, start, end, branch_id=branch_id
+    )
+    return rows
 
-    event_stmt = select(CaptureEvent).where(
-        CaptureEvent.received_at_server >= start,
-        CaptureEvent.received_at_server < end,
-        CaptureEvent.voided == False,
-    ).outerjoin(
-        JobCard, CaptureEvent.job_card_id == JobCard.job_card_id
-    ).where(
-        or_(
-            CaptureEvent.job_card_id.is_(None),
-            JobCard.status.notin_(["CANCELLED", "ZERO_BILLED"])
-        )
-    ).order_by(CaptureEvent.received_at_server)
-    event_result = await db.execute(event_stmt)
-    events = event_result.scalars().all()
 
-    # Group by work item: prefer job_card, then vehicle, then pending ref, then plate.
-    def _group_key(event) -> Any:
-        return event.job_card_id or event.vehicle_id or event.pending_vehicle_ref or event.plate_text_normalized or "unknown"
+@router.get("/dashboard/rework-rate", response_model=ReworkRateReport)
+async def rework_rate_dashboard(
+    start_date: str = None,
+    end_date: str = None,
+    branch_id: int = None,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Rework cycle counts per technician as a separate quality metric."""
+    from app.services.staff_performance_service import _StaffPerformanceService
+    end_dt = _parse_date(end_date) if end_date else datetime.utcnow().date()
+    start_dt = _parse_date(start_date) if start_date else end_dt - timedelta(days=30)
+    start = datetime.combine(start_dt, datetime.min.time())
+    end = datetime.combine(end_dt, datetime.max.time())
 
-    vehicle_events = defaultdict(list)
-    for event in events:
-        key = _group_key(event)
-        vehicle_events[key].append(event)
+    report = await _StaffPerformanceService.rework_rate_report(
+        db, start, end, branch_id=branch_id
+    )
+    return report
 
-    total_deviations = 0
-    by_type = defaultdict(int)
-    by_severity = defaultdict(int)
 
-    for key, evs in vehicle_events.items():
-        # Sort by received time
-        evs.sort(key=lambda e: e.received_at_server or datetime.min)
+@router.post("/dashboard/ai-action-plan", response_model=AIActionPlanResponse)
+async def ai_action_plan(
+    request: dict,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """On-demand AI recommendation. Called only when the user presses 'Generate
+    recommendation'. A mock provider is the default to keep API costs zero until
+    credentials are configured.
+    """
+    from app.services.ai_action_plan_service import _AIActionPlanService
+    from app.services.staff_performance_service import _StaffPerformanceService
 
-        # Get actual sequence
-        actual_sequence = []
-        for event in evs:
-            seq = expected_order.get(event.stage_id)
-            if seq is not None:
-                actual_sequence.append(seq)
+    branch_id = request.get("branch_id")
+    period_start = request.get("period_start")
+    period_end = request.get("period_end")
 
-        # Detect out-of-order and skipped stages
-        seen = set()
-        prev_seq = -1
-        for seq in actual_sequence:
-            if seq < prev_seq:
-                total_deviations += 1
-                by_type["WRONG_SEQUENCE"] += 1
-                by_severity["HIGH"] += 1
-            # Check skipped mandatory stages between prev and current
-            for s in range(prev_seq + 1, seq):
-                # Find stage code for this sequence
-                skipped_stage = next((st.stage_code for st in stages if (st.sequence_order or 0) == s), None)
-                if skipped_stage:
-                    total_deviations += 1
-                    by_type["SKIPPED_STAGE"] += 1
-                    by_severity["MEDIUM"] += 1
-            seen.add(seq)
-            prev_seq = seq
+    end_dt = _parse_date(period_end) if period_end else datetime.utcnow().date()
+    start_dt = _parse_date(period_start) if period_start else end_dt - timedelta(days=30)
+    start = datetime.combine(start_dt, datetime.min.time())
+    end = datetime.combine(end_dt, datetime.max.time())
 
+    vehicle_flow = await _StaffPerformanceService.vehicle_flow_summary(
+        db, start, end, branch_id=branch_id
+    )
+    parts_patterns = await _StaffPerformanceService.parts_shortage_patterns(
+        db, start, end, branch_id=branch_id
+    )
+    utilization = await _StaffPerformanceService.staff_utilization(
+        db, end_dt, start, end, branch_id=branch_id
+    )
+    rework = await _StaffPerformanceService.rework_rate_report(
+        db, start, end, branch_id=branch_id
+    )
+
+    plan = await _AIActionPlanService.generate(
+        period_start=str(start_dt),
+        period_end=str(end_dt),
+        branch_id=branch_id,
+        vehicle_flow=vehicle_flow,
+        deviation_summary={"note": "Use /dashboard/deviation-summary for full details"},
+        at_risk_alerts=vehicle_flow.get("at_risk_alerts", []),
+        parts_shortage_patterns=parts_patterns,
+        staff_utilization=utilization,
+        rework_rate=rework,
+    )
     return {
-        "total_deviations": total_deviations,
-        "by_type": dict(by_type),
-        "by_severity": dict(by_severity),
-        "resolved_count": 0
+        "provider_used": plan.get("provider_used", "mock"),
+        "model": plan.get("model"),
+        "cost_note": plan.get("cost_note"),
+        "action_plan": plan.get("action_plan"),
+        "raw_usage": plan.get("raw_usage"),
+        "error": plan.get("error"),
     }

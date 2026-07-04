@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     # External OCR provider
     OCR_SPACE_API_KEY: Optional[str] = None
 
+    # AI action-plan provider (Part F)
+    AI_PROVIDER: str = "mock"  # 'mock' | 'openrouter' | 'openai' | 'anthropic'
+    AI_API_KEY: Optional[str] = None
+    AI_MODEL: Optional[str] = None
+    AI_API_URL: Optional[str] = None
+
     # Environment
     DEBUG: bool = True
     ENVIRONMENT: str = "development"

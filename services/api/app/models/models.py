@@ -1,5 +1,5 @@
 """Database models for Workshop Click-2-Track."""
-from sqlalchemy import Column, String, Integer, DateTime, Boolean, ForeignKey, Float, Text, JSON, Enum
+from sqlalchemy import Column, String, Integer, DateTime, Boolean, ForeignKey, Float, Text, JSON, Enum, Date
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 import enum
@@ -83,6 +83,10 @@ class WorkflowStage(Base):
     branch = relationship("Branch", back_populates="workflow_stages")
     role = relationship("Role")
     captures = relationship("CaptureEvent", back_populates="stage")
+
+
+captured_event_user_fk = relationship("User", foreign_keys=["CaptureEvent.user_id"])
+
 
 class JobCardNotApplicableStage(Base):
     """Per-job-card 'not applicable' stage marking (Part D)."""
@@ -255,6 +259,59 @@ class CancellationCategory(Base):
 
 JobCard.cancellation_category = relationship("CancellationCategory", back_populates="job_cards")
 JobCard.job_types = relationship("JobCardJobType", back_populates="job_card")
+
+
+class UserShift(Base):
+    """Part F: daily staff utilisation view — active time vs shift time."""
+    __tablename__ = "user_shifts"
+
+    user_shift_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
+    branch_id = Column(Integer, ForeignKey("branches.branch_id"), nullable=True)
+    shift_date = Column(Date, nullable=False)
+    shift_start = Column(DateTime, nullable=False)
+    shift_end = Column(DateTime, nullable=False)
+    break_minutes = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User")
+
+
+class StaffTarget(Base):
+    """Part F: per-user monthly vehicle-count and revenue targets."""
+    __tablename__ = "staff_targets"
+
+    staff_target_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
+    branch_id = Column(Integer, ForeignKey("branches.branch_id"), nullable=True)
+    target_year = Column(Integer, nullable=False)
+    target_month = Column(Integer, nullable=False)
+    vehicle_target_count = Column(Integer, nullable=False, default=0)
+    daily_vehicle_target_count = Column(Integer, nullable=True)
+    monthly_revenue_target = Column(Float, nullable=True)
+    created_by_user_id = Column(Integer, ForeignKey("users.user_id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User", foreign_keys=[user_id])
+
+
+class DemoRevenueEntry(Base):
+    """Part F demo mode only: sample revenue figures. Must never be mistaken for real DMS revenue."""
+    __tablename__ = "demo_revenue_entries"
+
+    demo_revenue_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    external_job_card_no = Column(String(100), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.user_id"), nullable=True)
+    branch_id = Column(Integer, ForeignKey("branches.branch_id"), nullable=True)
+    revenue_amount = Column(Float, nullable=False)
+    revenue_currency = Column(String(10), default="INR")
+    revenue_date = Column(Date, nullable=False)
+    notes = Column(Text, default="DEMO DATA - NOT REAL REVENUE")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
 
 
 class OverrideRequest(Base):

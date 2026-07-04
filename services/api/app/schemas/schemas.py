@@ -476,3 +476,14 @@ class JobCardCycleReport(BaseModel):
     cycles: List[TechnicianCycle]
     qc_wait_windows: List[QcWaitWindow]
     total_parts_wait_minutes: float
+
+
+# Import Part F schemas into this module namespace for existing import patterns.
+from app.schemas.schemas_partf import (
+    StaffPerformanceRow, StaffPerformanceByRole, StaffPerformanceResponse,
+    VehicleFlowStage, VehicleFlowWorstBottleneck, VehicleFlowAtRiskAlert, VehicleFlowResponse,
+    StaffUtilizationRow, PartsShortagePatternItem, PartsShortagePatterns,
+    ReworkRateTechnician, ReworkRateReport, StaffTargetUpsert,
+    TeamTargetUserItem, TeamTargetsDashboard, AIActionPlanResponse,
+    UserShiftCreate, DemoRevenueEntryCreate,
+)

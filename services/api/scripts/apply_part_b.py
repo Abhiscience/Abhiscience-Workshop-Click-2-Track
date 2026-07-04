@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply Part B/D/E migration using SQLAlchemy metadata.
+"""Apply Part B/D/E/F/G migration using SQLAlchemy metadata.
 
 Creates override_requests, job_card_not_applicable_stages, cancellation_categories,
 frt_catalog, job_card_job_types tables, and adds any missing columns. Idempotent.
@@ -47,13 +47,6 @@ async def main():
                 if col_name not in ce_cols:
                     sync_conn.execute(text(col_sql))
 
-            # job_cards (Part D cancellation reason + category)
-            jc_cols = {c["name"] for c in inspector.get_columns("job_cards")}
-            if "cancellation_reason" not in jc_cols:
-                sync_conn.execute(text("ALTER TABLE job_cards ADD COLUMN cancellation_reason TEXT"))
-            if "cancellation_category_id" not in jc_cols:
-                sync_conn.execute(text("ALTER TABLE job_cards ADD COLUMN cancellation_category_id INTEGER REFERENCES cancellation_categories(cancellation_category_id)"))
-
             # Part G: capture authenticity signal columns.
             if "exif_timestamp" not in ce_cols:
                 sync_conn.execute(text("ALTER TABLE capture_events ADD COLUMN exif_timestamp TIMESTAMP WITHOUT TIME ZONE"))
@@ -71,10 +64,66 @@ async def main():
             if "geo_radius_meters" not in branch_cols:
                 sync_conn.execute(text("ALTER TABLE branches ADD COLUMN geo_radius_meters INTEGER NOT NULL DEFAULT 200"))
 
+            # job_cards (Part D cancellation reason + category)
+            jc_cols = {c["name"] for c in inspector.get_columns("job_cards")}
+            if "cancellation_reason" not in jc_cols:
+                sync_conn.execute(text("ALTER TABLE job_cards ADD COLUMN cancellation_reason TEXT"))
+            if "cancellation_category_id" not in jc_cols:
+                sync_conn.execute(text("ALTER TABLE job_cards ADD COLUMN cancellation_category_id INTEGER REFERENCES cancellation_categories(cancellation_category_id)"))
+
+            # Part F: staff targets, shifts, demo revenue.
+            sync_conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS staff_targets (
+                    staff_target_id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                    branch_id INTEGER REFERENCES branches(branch_id) ON DELETE SET NULL,
+                    target_year INTEGER NOT NULL,
+                    target_month INTEGER NOT NULL,
+                    vehicle_target_count INTEGER,
+                    daily_vehicle_target_count INTEGER,
+                    monthly_revenue_target NUMERIC(12,2),
+                    created_by_user_id INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+                    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+                    UNIQUE(user_id, target_year, target_month, branch_id)
+                )
+            """))
+            sync_conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS user_shifts (
+                    user_shift_id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                    branch_id INTEGER REFERENCES branches(branch_id) ON DELETE SET NULL,
+                    shift_date DATE NOT NULL,
+                    shift_start TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+                    shift_end TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+                    break_minutes INTEGER NOT NULL DEFAULT 0,
+                    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+                )
+            """))
+            sync_conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS demo_revenue_entries (
+                    demo_revenue_id SERIAL PRIMARY KEY,
+                    external_job_card_no VARCHAR(100),
+                    user_id INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+                    branch_id INTEGER REFERENCES branches(branch_id) ON DELETE SET NULL,
+                    revenue_amount NUMERIC(12,2) NOT NULL,
+                    revenue_currency VARCHAR(10) NOT NULL DEFAULT 'INR',
+                    revenue_date DATE NOT NULL,
+                    notes TEXT NOT NULL DEFAULT 'DEMO DATA',
+                    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+                )
+            """))
+
+            # Part E: ensure target_time_minutes column on frt_catalog exists
+            # if the table was created from metadata, this is a no-op.
+            frt_cols = {c["name"] for c in inspector.get_columns("frt_catalog")}
+            if "target_time_minutes" not in frt_cols:
+                sync_conn.execute(text("ALTER TABLE frt_catalog ADD COLUMN target_time_minutes INTEGER NOT NULL DEFAULT 60"))
+
         await conn.run_sync(ensure_additional_columns)
 
     await engine.dispose()
-    print("Part B/D/E/G migration applied successfully.")
+    print("Part B/D/E/F/G migration applied successfully.")
 
 
 if __name__ == "__main__":
