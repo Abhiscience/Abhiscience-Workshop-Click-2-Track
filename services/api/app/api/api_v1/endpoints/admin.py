@@ -12,7 +12,7 @@ from app.providers.ocr_provider import get_ocr_provider
 from app.core.security import decode_token, get_password_hash
 from app.core.database import get_db
 from app.models.models import Branch, CaptureEvent, JobCard, JobCategory, CancellationCategory, Role, User, Vehicle, WorkflowStage, OverrideRequest, OverrideRequestStatus, AppInstallation
-from app.schemas.schemas import OverrideRequestCreate, OverrideRequestResponse, CancellationCategoryCreate, CancellationCategory, CancelledPartialWorkReport
+from app.schemas.schemas import OverrideRequestCreate, OverrideRequestResponse, CancellationCategoryCreate, CancellationCategory as CancellationCategorySchema, CancelledPartialWorkReport
 from app.services.push_service import send_push_notification, build_override_decision_title
 
 router = APIRouter()
