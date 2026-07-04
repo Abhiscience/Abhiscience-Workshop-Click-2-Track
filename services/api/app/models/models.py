@@ -177,6 +177,7 @@ class CaptureEvent(Base):
     parts_wait_remark = Column(Text, nullable=True)
     
     stage = relationship("WorkflowStage")
+    vehicle = relationship("Vehicle")
     user = relationship("User", foreign_keys=[user_id])
     voider = relationship("User", foreign_keys=[voided_by])
     corrected_event = relationship("CaptureEvent", remote_side=[event_id], uselist=False)

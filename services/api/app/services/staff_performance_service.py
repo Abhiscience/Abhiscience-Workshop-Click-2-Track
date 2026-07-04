@@ -313,6 +313,10 @@ class _VehicleFlowDashboardService:
             "worst_bottleneck": worst_bottleneck,
             "total_deviations": deviation_report["summary"]["total_deviations"],
             "vehicles_with_deviations": deviation_report["summary"]["vehicles_with_deviations"],
+            "deviation_summary_note": (
+                f"{deviation_report['summary']['total_deviations']} deviation(s) across "
+                f"{deviation_report['summary']['vehicles_with_deviations']} vehicle(s) in this period."
+            ),
         }
 
 
