@@ -9,7 +9,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 
 from app.core.database import get_db
 from app.models.models import CaptureEvent, LinkStatus, MatchStatus, PendingVehicle, WorkflowStage, JobCategory, User, AppInstallation, Role, OverrideRequest, OverrideRequestStatus, JobCard, Vehicle, FlatRateTimeCatalog
@@ -338,7 +338,14 @@ async def submit_override_request(
                 print("Push notification failed:", result)
 
     await db.commit()
-    await db.refresh(override)
+    # Re-query with eager-loaded relationships so response serialization does
+    # not trigger lazy-loads outside an async context (MissingGreenlet).
+    result = await db.execute(
+        select(OverrideRequest)
+        .options(joinedload(OverrideRequest.requester), joinedload(OverrideRequest.stage))
+        .where(OverrideRequest.override_request_id == override.override_request_id)
+    )
+    override = result.scalars().first()
     return override
 
 
