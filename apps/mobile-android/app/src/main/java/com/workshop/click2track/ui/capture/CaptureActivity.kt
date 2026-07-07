@@ -28,7 +28,6 @@ import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
-import okhttp3.RequestBody.Companion.toRequestBody
 import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -279,21 +278,17 @@ class CaptureActivity : AppCompatActivity() {
 
                 val requestFile = imageFile.asRequestBody("image/jpeg".toMediaTypeOrNull())
                 val body = MultipartBody.Part.createFormData("image", imageFile.name, requestFile)
-                val stageBody = capture.stage_id.toString().toRequestBody("text/plain".toMediaTypeOrNull())
-                val jobCardBody = capture.job_card_id?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
-                val vehicleBody = capture.vehicle_id?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
-                val geoLatBody = capture.geo_lat?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
-                val geoLngBody = capture.geo_lng?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
-                val remarksBody = capture.remarks?.toRequestBody("text/plain".toMediaTypeOrNull())
 
                 val response = apiService.submitCapture(
                     authHeader = "Bearer $token",
-                    stageId = stageBody,
-                    jobCardId = jobCardBody,
-                    vehicleId = vehicleBody,
-                    geoLat = geoLatBody,
-                    geoLng = geoLngBody,
-                    remarks = remarksBody,
+                    stageId = capture.stage_id,
+                    remarks = capture.remarks,
+                    workDoneCategoryId = null,
+                    partsWait = null,
+                    partsWaitRemark = null,
+                    geoLat = capture.geo_lat,
+                    geoLng = capture.geo_lng,
+                    plateText = capture.plate_text,
                     image = body
                 )
 
@@ -406,25 +401,18 @@ class CaptureActivity : AppCompatActivity() {
 
                 val requestFile = imageFile.asRequestBody("image/jpeg".toMediaTypeOrNull())
                 val body = MultipartBody.Part.createFormData("image", imageFile.name, requestFile)
-                val stageBody = capture.stage_id.toString().toRequestBody("text/plain".toMediaTypeOrNull())
-                val reasonBody = reason.toRequestBody("text/plain".toMediaTypeOrNull())
-                val jobCardBody = capture.job_card_id?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
-                val vehicleBody = capture.vehicle_id?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
-                val plateBody = capture.plate_text?.toRequestBody("text/plain".toMediaTypeOrNull())
-                val remarksBody = capture.remarks?.toRequestBody("text/plain".toMediaTypeOrNull())
-                val geoLatBody = capture.geo_lat?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
-                val geoLngBody = capture.geo_lng?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
 
                 val response = apiService.submitOverrideRequest(
                     authHeader = "Bearer $token",
-                    stageId = stageBody,
-                    reason = reasonBody,
-                    jobCardId = jobCardBody,
-                    vehicleId = vehicleBody,
-                    plateText = plateBody,
-                    remarks = remarksBody,
-                    geoLat = geoLatBody,
-                    geoLng = geoLngBody,
+                    stageId = capture.stage_id,
+                    reason = reason,
+                    jobCardId = capture.job_card_id,
+                    vehicleId = capture.vehicle_id,
+                    plateText = capture.plate_text,
+                    remarks = capture.remarks,
+                    workDoneCategoryId = null,
+                    geoLat = capture.geo_lat,
+                    geoLng = capture.geo_lng,
                     image = body
                 )
 

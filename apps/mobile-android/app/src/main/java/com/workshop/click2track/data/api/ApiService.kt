@@ -3,7 +3,6 @@ package com.workshop.click2track.data.api
 import retrofit2.Response
 import retrofit2.http.*
 import okhttp3.MultipartBody
-import okhttp3.RequestBody
 
 // Data models
 // NOTE: backend IDs are integers. Keep these as Int everywhere to avoid
@@ -69,12 +68,14 @@ interface ApiService {
     @POST("captures/")
     suspend fun submitCapture(
         @Header("Authorization") authHeader: String,
-        @Part("stage_id") stageId: RequestBody,
-        @Part("job_card_id") jobCardId: RequestBody?,
-        @Part("vehicle_id") vehicleId: RequestBody?,
-        @Part("geo_lat") geoLat: RequestBody?,
-        @Part("geo_lng") geoLng: RequestBody?,
-        @Part("remarks") remarks: RequestBody?,
+        @Query("stage_id") stageId: Int,
+        @Query("remarks") remarks: String?,
+        @Query("work_done_category_id") workDoneCategoryId: Int?,
+        @Query("parts_wait") partsWait: Boolean?,
+        @Query("parts_wait_remark") partsWaitRemark: String?,
+        @Query("geo_lat") geoLat: Double?,
+        @Query("geo_lng") geoLng: Double?,
+        @Query("plate_text") plateText: String?,
         @Part image: MultipartBody.Part
     ): Response<CaptureResponse>
 
@@ -82,14 +83,15 @@ interface ApiService {
     @POST("captures/override-request")
     suspend fun submitOverrideRequest(
         @Header("Authorization") authHeader: String,
-        @Part("stage_id") stageId: RequestBody,
-        @Part("reason") reason: RequestBody,
-        @Part("job_card_id") jobCardId: RequestBody?,
-        @Part("vehicle_id") vehicleId: RequestBody?,
-        @Part("plate_text") plateText: RequestBody?,
-        @Part("remarks") remarks: RequestBody?,
-        @Part("geo_lat") geoLat: RequestBody?,
-        @Part("geo_lng") geoLng: RequestBody?,
+        @Query("stage_id") stageId: Int,
+        @Query("reason") reason: String,
+        @Query("job_card_id") jobCardId: Int?,
+        @Query("vehicle_id") vehicleId: Int?,
+        @Query("plate_text") plateText: String?,
+        @Query("remarks") remarks: String?,
+        @Query("work_done_category_id") workDoneCategoryId: Int?,
+        @Query("geo_lat") geoLat: Double?,
+        @Query("geo_lng") geoLng: Double?,
         @Part image: MultipartBody.Part
     ): Response<OverrideRequestResponse>
 
