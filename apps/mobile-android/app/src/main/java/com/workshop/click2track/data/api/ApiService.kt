@@ -93,11 +93,16 @@ interface ApiService {
         @Part image: MultipartBody.Part
     ): Response<OverrideRequestResponse>
 
-    @GET("admin/workflow-stages")
+    @GET("admin/workflows/stages")
     suspend fun listWorkflowStages(
         @Header("Authorization") authHeader: String,
         @Query("branch_id") branchId: Int
     ): Response<WorkflowStagesResponse>
+
+    @GET("auth/me")
+    suspend fun getCurrentUser(
+        @Header("Authorization") authHeader: String
+    ): Response<CurrentUserResponse>
 
     @GET("job-cards/active/search")
     suspend fun searchJobCards(@Query("plate") plate: String): Response<JobCardsResponse>
@@ -194,4 +199,13 @@ data class OverrideRequestResponse(
     val override_request_id: Int,
     val status: String,
     val message: String?
+)
+
+data class CurrentUserResponse(
+    val user_id: Int,
+    val name: String?,
+    val mobile: String?,
+    val role_id: Int,
+    val branch_id: Int?,
+    val status: String?
 )

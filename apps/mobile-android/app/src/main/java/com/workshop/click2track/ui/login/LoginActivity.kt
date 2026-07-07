@@ -91,8 +91,7 @@ class LoginActivity : AppCompatActivity() {
 
     private fun saveSessionAndProceed(body: LoginResponse) {
         lifecycleScope.launch(Dispatchers.IO) {
-            // Fetch minimal user info from the token; profile details can be backfilled later.
-            val prefs = UserPreferences(
+            val initialPrefs = UserPreferences(
                 user_id = body.user_id,
                 name = "",
                 mobile = binding.mobileEditText.text.toString().trim(),
@@ -102,7 +101,22 @@ class LoginActivity : AppCompatActivity() {
                 access_token = body.access_token,
                 last_sync = null
             )
-            db.userPrefsDao().insert(prefs)
+            db.userPrefsDao().insert(initialPrefs)
+
+            // Backfill branch_id and name from authenticated profile endpoint.
+            try {
+                val me = apiService.getCurrentUser("Bearer ${body.access_token}")
+                if (me.isSuccessful && me.body() != null) {
+                    val profile = me.body()!!
+                    val updated = initialPrefs.copy(
+                        name = profile.name ?: initialPrefs.name,
+                        branch_id = profile.branch_id
+                    )
+                    db.userPrefsDao().insert(updated)
+                }
+            } catch (_: Exception) {
+                // Proceed without profile enrichment; stage-selection branch_id will need manual setting.
+            }
 
             withContext(Dispatchers.Main) {
                 openStageSelection()

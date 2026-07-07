@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.providers.ocr_provider import get_ocr_provider
 from app.providers.dms_provider import get_dms_provider
-from app.core.security import decode_token, get_password_hash
+from app.core.security import decode_token, get_password_hash, get_current_user
 from app.core.database import get_db
 from app.schemas.schemas_partf import (
     VehicleFlowResponse, StaffPerformanceResponse, StaffUtilizationRow,
@@ -301,10 +301,10 @@ async def create_workflow_stage(
 @router.get("/workflows/stages")
 async def list_workflow_stages(
     branch_id: int = None,
-    admin: dict = Depends(get_admin_user),
+    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """List workflow stages."""
+    """List workflow stages. Available to any authenticated user."""
     stmt = select(WorkflowStage).options(joinedload(WorkflowStage.role))
     if branch_id:
         stmt = stmt.where(WorkflowStage.branch_id == branch_id)
