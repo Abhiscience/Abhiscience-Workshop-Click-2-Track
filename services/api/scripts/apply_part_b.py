@@ -114,6 +114,21 @@ async def main():
                 )
             """))
 
+            # Part G future-proofing: complaints placeholder table.
+            sync_conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS complaints (
+                    complaint_id SERIAL PRIMARY KEY,
+                    job_card_id INTEGER NOT NULL REFERENCES job_cards(job_card_id) ON DELETE CASCADE,
+                    description TEXT NOT NULL,
+                    status VARCHAR(50) NOT NULL DEFAULT 'OPEN',
+                    raised_by INTEGER NOT NULL REFERENCES users(user_id),
+                    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+                )
+            """))
+            sync_conn.execute(text("CREATE INDEX IF NOT EXISTS idx_complaints_job_card ON complaints(job_card_id)"))
+            sync_conn.execute(text("CREATE INDEX IF NOT EXISTS idx_complaints_status ON complaints(status)"))
+
             # Part E: ensure target_time_minutes column on frt_catalog exists
             # if the table was created from metadata, this is a no-op.
             frt_cols = {c["name"] for c in inspector.get_columns("frt_catalog")}

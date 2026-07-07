@@ -1,86 +1,181 @@
-"""DMS (Dealer Management System) provider.
+"""DMS integration provider.
 
-This module is the boundary for all billing / invoice data from the external DMS.
-Currently implemented as a mock provider for development and QA. When a real DMS
-connection (e.g. Reynolds, CDK, Auto/Mate) is available, replace the async
-`lookup_billing_info` implementation without changing the provider surface.
+Mirrors the ANPR provider pattern. The DMS provider is intentionally a narrow
+interface: a DMS normally owns repair order cost, parts, labour and invoice data.
+For Workshop Click-2-Track the first useful integration is pulling a small,
+read-only financial summary per completed job card so that reporting dashboards
+can show real revenue once a live DMS is connected.
+
+When a real DMS is selected (e.g. Reynolds & Reynolds, CDK, ERA, etc.), only the
+concrete provider implementation needs to change; the interface and factory stay
+exactly the same.
 """
-from typing import Optional
-from dataclasses import dataclass
-from datetime import datetime
+from abc import ABC, abstractmethod
+from typing import Optional, Dict, Any
 
 
-@dataclass
-class DMSBillingInfo:
-    """Billing information for a single job card from the DMS."""
+class DMSProvider(ABC):
+    """Abstract base class for Dealer Management System providers."""
 
-    external_job_card_no: str
-    dms_status: str  # OPEN, CANCELLED, BILLED, CLOSED, etc.
-    bill_amount: float  # Total invoice amount. 0.0 means zero-billed.
-    currency: str = "INR"
-    billed_at: Optional[datetime] = None
-    raw_payload: Optional[dict] = None
+    @abstractmethod
+    async def get_job_financial_summary(
+        self,
+        external_job_card_no: Optional[str] = None,
+        job_card_id: Optional[int] = None,
+        vehicle_registration: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Return a financial summary for a job card / repair order.
+
+        Expected return shape (provider implementations should fill in every key):
+        {
+            "external_job_card_no": str | None,
+            "job_card_id": int | None,
+            "found": bool,
+            "provider": str,
+            "invoice_amount": float | None,    # billed to customer
+            "labour_cost": float | None,       # cost of labour
+            "parts_cost": float | None,
+            "misc_cost": float | None,
+            "profit_amount": float | None,     # invoice - costs (if available)
+            "currency": str | None,
+            "invoice_date": str | None,        # ISO date
+            "error": str | None,
+        }
+        """
+        pass
+
+    @abstractmethod
+    def get_provider_name(self) -> str:
+        pass
 
 
-class DMSProviderError(Exception):
-    """Raised when the DMS lookup fails or returns invalid data."""
-    pass
+class MockDMSProvider(DMSProvider):
+    """Mock DMS provider for development and demonstration.
 
-
-class DMSProvider:
-    """Abstract boundary for DMS billing data.
-
-    The app should never import anything else from this module.
+    Returns plausible placeholder figures so the dashboard can visualise the
+    shape of the data without a live DMS connection. All values are clearly
+    labeled with "mock" in the provider field.
     """
 
-    async def lookup_billing_info(self, external_job_card_no: str) -> DMSBillingInfo:
-        """Fetch billing info for a job card.
+    def __init__(self, seed: int = 1):
+        self._seed = seed
+        self._call_count = 0
 
-        In the mock implementation we simulate two behaviors:
-        - job cards ending in "-Z" → zero-billed completed job (BILLED, 0.0)
-        - job cards ending in "-C" → cancelled in DMS (CANCELLED, 0.0)
-        - everything else → not found / unknown
+    async def get_job_financial_summary(
+        self,
+        external_job_card_no: Optional[str] = None,
+        job_card_id: Optional[int] = None,
+        vehicle_registration: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        self._call_count += 1
+        # Deterministic but varying placeholder numbers based on inputs.
+        key = external_job_card_no or str(job_card_id or vehicle_registration or "unknown")
+        hash_ = sum(ord(c) for c in key) if key else 0
+        invoice = round(2500.0 + ((hash_ % 100) * 50.0) + (self._call_count % 5) * 100.0, 2)
+        costs = round(invoice * 0.75, 2)
+        return {
+            "external_job_card_no": external_job_card_no,
+            "job_card_id": job_card_id,
+            "found": True,
+            "provider": "mock",
+            "invoice_amount": invoice,
+            "labour_cost": round(costs * 0.55, 2),
+            "parts_cost": round(costs * 0.35, 2),
+            "misc_cost": round(costs * 0.10, 2),
+            "profit_amount": round(invoice - costs, 2),
+            "currency": "INR",
+            "invoice_date": None,
+            "error": None,
+        }
 
-        This is intentionally simple so QA can test the reconciliation flow.
-        """
-        if not external_job_card_no:
-            raise DMSProviderError("external_job_card_no is required")
-
-        # Mock behavior for QA/testing without real DMS access.
-        if external_job_card_no.endswith("-Z"):
-            return DMSBillingInfo(
-                external_job_card_no=external_job_card_no,
-                dms_status="BILLED",
-                bill_amount=0.0,
-                billed_at=datetime.utcnow(),
-                raw_payload={"source": "mock", "reason": "zero-billed test suffix"},
-            )
-        if external_job_card_no.endswith("-C"):
-            return DMSBillingInfo(
-                external_job_card_no=external_job_card_no,
-                dms_status="CANCELLED",
-                bill_amount=0.0,
-                billed_at=None,
-                raw_payload={"source": "mock", "reason": "cancelled test suffix"},
-            )
-
-        # Default: unknown / not present in DMS mock.
-        return DMSBillingInfo(
-            external_job_card_no=external_job_card_no,
-            dms_status="UNKNOWN",
-            bill_amount=0.0,
-            billed_at=None,
-            raw_payload={"source": "mock", "reason": "not found"},
-        )
+    def get_provider_name(self) -> str:
+        return "mock"
 
 
-# Module-level singleton.
-_dms_provider: Optional[DMSProvider] = None
+class ReynoldsDMSProvider(DMSProvider):
+    """Stub for Reynolds & Reynolds Certified Interface (RCI) integration.
+
+    This is intentionally unimplemented. Once the business decision is made and
+    API credentials/partnership are available, fill in the authentication and
+    endpoint calls here. No callers need to change.
+    """
+
+    def __init__(self, api_url: Optional[str] = None, api_key: Optional[str] = None):
+        self.api_url = (api_url or "").rstrip("/")
+        self.api_key = api_key
+
+    async def get_job_financial_summary(
+        self,
+        external_job_card_no: Optional[str] = None,
+        job_card_id: Optional[int] = None,
+        vehicle_registration: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return {
+            "external_job_card_no": external_job_card_no,
+            "job_card_id": job_card_id,
+            "found": False,
+            "provider": "reynolds",
+            "invoice_amount": None,
+            "labour_cost": None,
+            "parts_cost": None,
+            "misc_cost": None,
+            "profit_amount": None,
+            "currency": None,
+            "invoice_date": None,
+            "error": "Reynolds DMS integration not yet implemented.",
+        }
+
+    def get_provider_name(self) -> str:
+        return "reynolds"
 
 
-def get_dms_provider() -> DMSProvider:
-    """Return the configured DMS provider."""
-    global _dms_provider
-    if _dms_provider is None:
-        _dms_provider = DMSProvider()
-    return _dms_provider
+def get_dms_provider(provider_name: str = "mock", **kwargs) -> DMSProvider:
+    """Factory function for DMS providers."""
+    providers = {
+        "mock": MockDMSProvider,
+        "reynolds": ReynoldsDMSProvider,
+    }
+
+    if provider_name not in providers:
+        raise ValueError(f"Unknown DMS provider: {provider_name}")
+
+    return providers[provider_name](**kwargs)
+
+
+# Global provider instance, initialised lazily from settings.
+_current_provider: Optional[DMSProvider] = None
+
+
+def get_current_dms_provider() -> DMSProvider:
+    """Return the configured DMS provider singleton."""
+    global _current_provider
+    if _current_provider is None:
+        from app.core.config import settings
+        kwargs = {}
+        if settings.DMS_API_URL:
+            kwargs["api_url"] = settings.DMS_API_URL
+        if settings.DMS_API_KEY:
+            kwargs["api_key"] = settings.DMS_API_KEY
+        _current_provider = get_dms_provider(settings.DMS_PROVIDER, **kwargs)
+    return _current_provider
+
+
+def set_dms_provider(provider: DMSProvider) -> None:
+    """Set (or swap) the global DMS provider. Useful for testing."""
+    global _current_provider
+    _current_provider = provider
+
+
+async def get_job_financial_summary(
+    external_job_card_no: Optional[str] = None,
+    job_card_id: Optional[int] = None,
+    vehicle_registration: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Singleton access to DMS financial summary lookup."""
+    provider = get_current_dms_provider()
+    return await provider.get_job_financial_summary(
+        external_job_card_no=external_job_card_no,
+        job_card_id=job_card_id,
+        vehicle_registration=vehicle_registration,
+    )

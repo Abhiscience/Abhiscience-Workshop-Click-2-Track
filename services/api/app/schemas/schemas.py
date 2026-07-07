@@ -478,6 +478,27 @@ class JobCardCycleReport(BaseModel):
     total_parts_wait_minutes: float
 
 
+# Complaint placeholder schemas (Part G future-proofing)
+class ComplaintBase(BaseModel):
+    job_card_id: int
+    description: str
+
+
+class ComplaintCreate(ComplaintBase):
+    pass
+
+
+class Complaint(ComplaintBase):
+    complaint_id: int
+    status: str
+    raised_by: int
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
 # Import Part F schemas into this module namespace for existing import patterns.
 from app.schemas.schemas_partf import (
     StaffPerformanceRow, StaffPerformanceByRole, StaffPerformanceResponse,

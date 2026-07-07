@@ -193,3 +193,19 @@ INSERT INTO frt_catalog (job_type_code, job_type_name, target_time_minutes, is_a
     ('AC_SERVICE', 'A/C service', 120, TRUE),
     ('GENERAL_SERVICE', 'General service', 150, TRUE)
 ON CONFLICT (job_type_code) DO NOTHING;
+
+-- Part G future-proofing: complaints placeholder table
+CREATE TABLE IF NOT EXISTS complaints (
+    complaint_id SERIAL PRIMARY KEY,
+    job_card_id INTEGER NOT NULL REFERENCES job_cards(job_card_id) ON DELETE CASCADE,
+    description TEXT NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'OPEN',
+    raised_by INTEGER NOT NULL REFERENCES users(user_id),
+    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_complaints_job_card
+    ON complaints(job_card_id);
+CREATE INDEX IF NOT EXISTS idx_complaints_status
+    ON complaints(status);

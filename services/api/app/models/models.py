@@ -315,6 +315,33 @@ class DemoRevenueEntry(Base):
     user = relationship("User")
 
 
+class ComplaintStatus(str, enum.Enum):
+    OPEN = "OPEN"
+    IN_PROGRESS = "IN_PROGRESS"
+    RESOLVED = "RESOLVED"
+    CLOSED = "CLOSED"
+
+
+class Complaint(Base):
+    """Complaints placeholder — door, not the room.
+
+    Stores a customer/team complaint tied to a job card. Full notification,
+    escalation, timeline and resolution workflow is intentionally deferred.
+    """
+    __tablename__ = "complaints"
+
+    complaint_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    job_card_id = Column(Integer, ForeignKey("job_cards.job_card_id"), nullable=False)
+    description = Column(Text, nullable=False)
+    status = Column(String(50), default=ComplaintStatus.OPEN.value)
+    raised_by = Column(Integer, ForeignKey("users.user_id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    job_card = relationship("JobCard")
+    user = relationship("User", foreign_keys=[raised_by])
+
+
 class OverrideRequest(Base):
     __tablename__ = "override_requests"
 

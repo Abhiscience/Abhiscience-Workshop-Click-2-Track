@@ -1,7 +1,6 @@
 """Admin management endpoints."""
-import re
 from datetime import datetime, date, timedelta
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,9 +8,6 @@ from sqlalchemy import select, func
 from sqlalchemy.future import select as future_select
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import IntegrityError
-import re
-from datetime import datetime, date, timedelta
-from typing import List
 
 from app.providers.ocr_provider import get_ocr_provider
 from app.providers.dms_provider import get_dms_provider
@@ -25,7 +21,7 @@ from app.schemas.schemas_partf import (
 from app.models.models import (
     Branch, CaptureEvent, JobCard, JobCategory, CancellationCategory, Role, User, Vehicle, WorkflowStage,
     OverrideRequest, OverrideRequestStatus, AppInstallation, FlatRateTimeCatalog, JobCardJobType,
-    UserShift, StaffTarget, DemoRevenueEntry,
+    UserShift, StaffTarget, DemoRevenueEntry, Complaint, ComplaintStatus,
 )
 from app.schemas.schemas import (
     OverrideRequestCreate, OverrideRequestResponse, CancellationCategoryCreate,
@@ -33,6 +29,7 @@ from app.schemas.schemas import (
     FlatRateTimeCatalogCreate, FlatRateTimeCatalog as FlatRateTimeCatalogSchema,
     JobCardJobTypeCreate, JobCardJobTypesResponse,
     SuspiciousCaptureReviewResponse, BranchLocationConfig,
+    ComplaintCreate, Complaint as ComplaintSchema,
 )
 from app.services.push_service import send_push_notification, build_override_decision_title
 
@@ -1359,3 +1356,90 @@ async def list_job_card_job_types(
         "total_target_time_minutes": sum(jt["target_time_minutes"] for jt in job_types),
         "job_types": job_types,
     }
+
+
+# ---------------------------------------------------------------------------
+# Complaints placeholder endpoints (Part G future-proofing).
+# ---------------------------------------------------------------------------
+@router.post("/complaints", response_model=ComplaintSchema, status_code=201)
+async def create_complaint(
+    data: ComplaintCreate,
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a placeholder complaint entry for a job card."""
+    await _require_admin_role(admin["user_id"], db)
+
+    jc_result = await db.execute(select(JobCard).where(JobCard.job_card_id == data.job_card_id))
+    if not jc_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Job card not found")
+
+    complaint = Complaint(
+        job_card_id=data.job_card_id,
+        description=data.description,
+        status=ComplaintStatus.OPEN.value,
+        raised_by=admin["user_id"],
+    )
+    db.add(complaint)
+    await db.commit()
+    await db.refresh(complaint)
+    return complaint
+
+
+@router.get("/complaints", response_model=List[ComplaintSchema])
+async def list_complaints(
+    status: Optional[str] = None,
+    job_card_id: Optional[int] = None,
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List placeholder complaints with optional filters."""
+    stmt = select(Complaint)
+    if status:
+        stmt = stmt.where(Complaint.status == status.upper())
+    if job_card_id:
+        stmt = stmt.where(Complaint.job_card_id == job_card_id)
+    stmt = stmt.order_by(Complaint.created_at.desc())
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
+@router.get("/complaints/{complaint_id}", response_model=ComplaintSchema)
+async def get_complaint(
+    complaint_id: int,
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get a single placeholder complaint."""
+    result = await db.execute(select(Complaint).where(Complaint.complaint_id == complaint_id))
+    complaint = result.scalar_one_or_none()
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+    return complaint
+
+
+@router.patch("/complaints/{complaint_id}/status", response_model=ComplaintSchema)
+async def update_complaint_status(
+    complaint_id: int,
+    new_status: dict,
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update complaint status only. No resolution workflow or notifications yet."""
+    await _require_admin_role(admin["user_id"], db)
+
+    result = await db.execute(select(Complaint).where(Complaint.complaint_id == complaint_id))
+    complaint = result.scalar_one_or_none()
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+
+    valid = {s.value for s in ComplaintStatus}
+    status_value = new_status.get("status", "").upper()
+    if status_value not in valid:
+        raise HTTPException(status_code=400, detail=f"Invalid status. Valid: {valid}")
+
+    complaint.status = status_value
+    complaint.updated_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(complaint)
+    return complaint
