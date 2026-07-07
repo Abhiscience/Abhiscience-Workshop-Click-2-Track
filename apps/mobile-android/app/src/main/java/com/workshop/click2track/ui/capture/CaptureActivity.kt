@@ -4,9 +4,11 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.Looper
 import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -27,6 +29,7 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.io.File
@@ -41,10 +44,15 @@ class CaptureActivity : AppCompatActivity() {
     private var pendingCaptureId: String? = null
     private var imageCaptureRef: ImageCapture? = null
 
-    // TODO: Phase 2 — wire these from the stage-selection UI rather than hardcoding.
-    private var currentStageId: Int = 1
+    private var currentStageId: Int = -1
+    private var currentStageName: String = ""
+    private var currentStageCode: String = ""
+    private var currentAllowOverride: Boolean = false
     private var currentJobCardId: Int? = null
     private var currentVehicleId: Int? = null
+    private var currentManualPlate: String? = null
+    private var currentGeoLat: Double? = null
+    private var currentGeoLng: Double? = null
 
     private val apiService: ApiService by lazy {
         Retrofit.Builder()
@@ -71,7 +79,16 @@ class CaptureActivity : AppCompatActivity() {
         binding = ActivityCaptureBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // Check if emulator mode (for MacBook testing)
+        readIntentExtras()
+        if (currentStageId <= 0) {
+            Toast.makeText(this, "No stage selected", Toast.LENGTH_SHORT).show()
+            finish()
+            return
+        }
+        binding.stageNameText?.text = "$currentStageName ($currentStageCode)"
+
+        // Location is captured at moment of photo, not eagerly.
+
         isEmulatorMode = BuildConfig.EMULATOR_TEST_MODE || !hasCamera()
 
         if (isEmulatorMode) {
@@ -88,6 +105,46 @@ class CaptureActivity : AppCompatActivity() {
         }
 
         cameraExecutor = Executors.newSingleThreadExecutor()
+    }
+
+    private fun readIntentExtras() {
+        currentStageId = intent.getIntExtra(EXTRA_STAGE_ID, -1)
+        currentStageName = intent.getStringExtra(EXTRA_STAGE_NAME) ?: ""
+        currentStageCode = intent.getStringExtra(EXTRA_STAGE_CODE) ?: ""
+        currentAllowOverride = intent.getBooleanExtra(EXTRA_ALLOW_OVERRIDE, false)
+        val jobCardExtra = intent.getIntExtra(EXTRA_JOB_CARD_ID, -1)
+        currentJobCardId = if (jobCardExtra > 0) jobCardExtra else null
+        val vehicleExtra = intent.getIntExtra(EXTRA_VEHICLE_ID, -1)
+        currentVehicleId = if (vehicleExtra > 0) vehicleExtra else null
+        currentManualPlate = intent.getStringExtra(EXTRA_MANUAL_PLATE)?.takeIf { it.isNotBlank() }
+    }
+
+    private fun captureLocation(onLocationReady: () -> Unit) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED) {
+            onLocationReady()
+            return
+        }
+
+        try {
+            val fusedLocationClient = com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(this)
+            val locationRequest = com.google.android.gms.location.LocationRequest.Builder(
+                com.google.android.gms.location.Priority.PRIORITY_BALANCED_POWER_ACCURACY, 5000L
+            ).build()
+            val callback = object : com.google.android.gms.location.LocationCallback() {
+                override fun onLocationResult(result: com.google.android.gms.location.LocationResult) {
+                    result.lastLocation?.let {
+                        currentGeoLat = it.latitude
+                        currentGeoLng = it.longitude
+                    }
+                    fusedLocationClient.removeLocationUpdates(this)
+                    onLocationReady()
+                }
+            }
+            fusedLocationClient.requestLocationUpdates(locationRequest, callback, Looper.getMainLooper())
+        } catch (e: Exception) {
+            onLocationReady()
+        }
     }
 
     private fun hasCamera(): Boolean {
@@ -162,7 +219,7 @@ class CaptureActivity : AppCompatActivity() {
 
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     val savedUri = output.savedUri ?: Uri.fromFile(photoFile)
-                    processSelectedImage(savedUri)
+                    captureLocation { processSelectedImage(savedUri) }
                 }
             }
         )
@@ -183,9 +240,11 @@ class CaptureActivity : AppCompatActivity() {
             job_card_id = currentJobCardId,
             vehicle_id = currentVehicleId,
             image_uri = uri.toString(),
-            plate_text = null,
+            plate_text = currentManualPlate,
             confidence = null,
             remarks = null,
+            geo_lat = currentGeoLat,
+            geo_lng = currentGeoLng,
             created_at = Date()
         )
 
@@ -223,6 +282,8 @@ class CaptureActivity : AppCompatActivity() {
                 val stageBody = capture.stage_id.toString().toRequestBody("text/plain".toMediaTypeOrNull())
                 val jobCardBody = capture.job_card_id?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
                 val vehicleBody = capture.vehicle_id?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
+                val geoLatBody = capture.geo_lat?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
+                val geoLngBody = capture.geo_lng?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
                 val remarksBody = capture.remarks?.toRequestBody("text/plain".toMediaTypeOrNull())
 
                 val response = apiService.submitCapture(
@@ -230,6 +291,8 @@ class CaptureActivity : AppCompatActivity() {
                     stageId = stageBody,
                     jobCardId = jobCardBody,
                     vehicleId = vehicleBody,
+                    geoLat = geoLatBody,
+                    geoLng = geoLngBody,
                     remarks = remarksBody,
                     image = body
                 )
@@ -241,9 +304,18 @@ class CaptureActivity : AppCompatActivity() {
                         db.pendingCaptureDao().deleteSynced()
                         Toast.makeText(this@CaptureActivity, "Upload successful", Toast.LENGTH_SHORT).show()
                     } else {
-                        val error = "Upload failed: ${response.code()}"
-                        markFailed(capture, error)
-                        Toast.makeText(this@CaptureActivity, error, Toast.LENGTH_SHORT).show()
+                        val errorBody = response.errorBody()?.string()
+                        if (isRoleLockedError(errorBody)) {
+                            if (currentAllowOverride) {
+                                showOverridePrompt(capture)
+                            } else {
+                                markFailed(capture, "Stage locked - override not allowed")
+                                Toast.makeText(this@CaptureActivity, "Stage locked", Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            markFailed(capture, "Upload failed: ${response.code()} - $errorBody")
+                            Toast.makeText(this@CaptureActivity, "Upload failed: ${response.code()}", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -275,6 +347,119 @@ class CaptureActivity : AppCompatActivity() {
         } catch (e: Exception) {
             null
         }
+    }
+
+    private fun isRoleLockedError(errorBody: String?): Boolean {
+        return errorBody?.contains("role-locked", ignoreCase = true) == true ||
+                errorBody?.contains("role locked", ignoreCase = true) == true ||
+                errorBody?.contains("override request", ignoreCase = true) == true
+    }
+
+    private fun showOverridePrompt(capture: PendingCapture) {
+        lifecycleScope.launch(Dispatchers.Main) {
+            val input = android.widget.EditText(this@CaptureActivity)
+            input.hint = "Reason for override"
+            AlertDialog.Builder(this@CaptureActivity)
+                .setTitle("Stage locked")
+                .setMessage("This stage is role-locked. Enter a reason for the override request.")
+                .setView(input)
+                .setPositiveButton("Submit request") { _, _ ->
+                    val reason = input.text.toString().trim()
+                    if (reason.isNotBlank()) {
+                        submitOverrideRequest(capture, reason)
+                    } else {
+                        lifecycleScope.launch {
+                            markFailed(capture, "Override request cancelled - no reason")
+                        }
+                        Toast.makeText(this@CaptureActivity, "Override reason required", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                .setNegativeButton("Cancel") { _, _ ->
+                    lifecycleScope.launch {
+                        markFailed(capture, "Override request cancelled by user")
+                    }
+                }
+                .setCancelable(false)
+                .show()
+        }
+    }
+
+    private fun submitOverrideRequest(capture: PendingCapture, reason: String) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val token = db.userPrefsDao().getUserPreferences()?.access_token
+            if (token.isNullOrBlank()) {
+                markFailed(capture, "No auth token for override request")
+                return@launch
+            }
+            val imageUri = capture.image_uri?.let { Uri.parse(it) } ?: run {
+                markFailed(capture, "Missing image URI")
+                return@launch
+            }
+            val imageFile = uriToFile(imageUri) ?: run {
+                markFailed(capture, "Could not read image")
+                return@launch
+            }
+
+            try {
+                val syncing = capture.copy(sync_status = "SYNCING")
+                db.pendingCaptureDao().update(syncing)
+
+                val requestFile = imageFile.asRequestBody("image/jpeg".toMediaTypeOrNull())
+                val body = MultipartBody.Part.createFormData("image", imageFile.name, requestFile)
+                val stageBody = capture.stage_id.toString().toRequestBody("text/plain".toMediaTypeOrNull())
+                val reasonBody = reason.toRequestBody("text/plain".toMediaTypeOrNull())
+                val jobCardBody = capture.job_card_id?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
+                val vehicleBody = capture.vehicle_id?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
+                val plateBody = capture.plate_text?.toRequestBody("text/plain".toMediaTypeOrNull())
+                val remarksBody = capture.remarks?.toRequestBody("text/plain".toMediaTypeOrNull())
+                val geoLatBody = capture.geo_lat?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
+                val geoLngBody = capture.geo_lng?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
+
+                val response = apiService.submitOverrideRequest(
+                    authHeader = "Bearer $token",
+                    stageId = stageBody,
+                    reason = reasonBody,
+                    jobCardId = jobCardBody,
+                    vehicleId = vehicleBody,
+                    plateText = plateBody,
+                    remarks = remarksBody,
+                    geoLat = geoLatBody,
+                    geoLng = geoLngBody,
+                    image = body
+                )
+
+                withContext(Dispatchers.Main) {
+                    if (response.isSuccessful && response.body() != null) {
+                        val overrideId = response.body()!!.override_request_id
+                        val marked = capture.copy(
+                            sync_status = "FAILED",
+                            retry_count = capture.retry_count,
+                            remarks = "Override request #$overrideId submitted - pending admin approval"
+                        )
+                        db.pendingCaptureDao().update(marked)
+                        Toast.makeText(this@CaptureActivity, "Override request submitted: #$overrideId", Toast.LENGTH_LONG).show()
+                    } else {
+                        markFailed(capture, "Override submission failed: ${response.code()}")
+                        Toast.makeText(this@CaptureActivity, "Override submission failed", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                markFailed(capture, "Override submission error: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@CaptureActivity, "Override submission error", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    companion object {
+        const val EXTRA_STAGE_ID = "stage_id"
+        const val EXTRA_STAGE_NAME = "stage_name"
+        const val EXTRA_STAGE_CODE = "stage_code"
+        const val EXTRA_ALLOW_OVERRIDE = "allow_override"
+        const val EXTRA_JOB_CARD_ID = "job_card_id"
+        const val EXTRA_VEHICLE_ID = "vehicle_id"
+        const val EXTRA_MANUAL_PLATE = "manual_plate"
     }
 
     override fun onDestroy() {

@@ -72,9 +72,32 @@ interface ApiService {
         @Part("stage_id") stageId: RequestBody,
         @Part("job_card_id") jobCardId: RequestBody?,
         @Part("vehicle_id") vehicleId: RequestBody?,
+        @Part("geo_lat") geoLat: RequestBody?,
+        @Part("geo_lng") geoLng: RequestBody?,
         @Part("remarks") remarks: RequestBody?,
         @Part image: MultipartBody.Part
     ): Response<CaptureResponse>
+
+    @Multipart
+    @POST("captures/override-request")
+    suspend fun submitOverrideRequest(
+        @Header("Authorization") authHeader: String,
+        @Part("stage_id") stageId: RequestBody,
+        @Part("reason") reason: RequestBody,
+        @Part("job_card_id") jobCardId: RequestBody?,
+        @Part("vehicle_id") vehicleId: RequestBody?,
+        @Part("plate_text") plateText: RequestBody?,
+        @Part("remarks") remarks: RequestBody?,
+        @Part("geo_lat") geoLat: RequestBody?,
+        @Part("geo_lng") geoLng: RequestBody?,
+        @Part image: MultipartBody.Part
+    ): Response<OverrideRequestResponse>
+
+    @GET("admin/workflow-stages")
+    suspend fun listWorkflowStages(
+        @Header("Authorization") authHeader: String,
+        @Query("branch_id") branchId: Int
+    ): Response<WorkflowStagesResponse>
 
     @GET("job-cards/active/search")
     suspend fun searchJobCards(@Query("plate") plate: String): Response<JobCardsResponse>
@@ -132,4 +155,43 @@ data class VehicleStatus(
     val registration: String,
     val current_stage: String,
     val entered_at: String
+)
+
+data class WorkflowStage(
+    val stage_id: Int,
+    val branch_id: Int?,
+    val role_id: Int?,
+    val stage_code: String,
+    val stage_name: String,
+    val sequence_order: Int,
+    val capture_mandatory: Boolean?,
+    val allow_override: Boolean?,
+    val skip_deviation: Boolean?,
+    val role_name: String?
+)
+
+data class WorkflowStagesResponse(
+    val stages: List<WorkflowStage>
+)
+
+data class ActiveJobCardsResponse(
+    val job_cards: List<ActiveJobCard>
+)
+
+data class ActiveJobCard(
+    val job_card_id: Int,
+    val external_job_card_no: String,
+    val vehicle_id: Int?,
+    val registration_number: String?,
+    val branch_id: Int?,
+    val advisor_id: Int?,
+    val status: String?,
+    val open_time: String?,
+    val close_time: String?
+)
+
+data class OverrideRequestResponse(
+    val override_request_id: Int,
+    val status: String,
+    val message: String?
 )

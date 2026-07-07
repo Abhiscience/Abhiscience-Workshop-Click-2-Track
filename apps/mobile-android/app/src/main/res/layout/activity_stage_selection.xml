@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Select stage"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="8dp" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:id="@+id/stageListLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </ScrollView>
+
+    <TextView
+        android:id="@+id/selectedStageText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="No stage selected"
+        android:textStyle="bold"
+        android:paddingVertical="8dp" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#dddddd"
+        android:layout_marginVertical="8dp" />
+
+    <EditText
+        android:id="@+id/plateSearchEditText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Search active job cards by plate" />
+
+    <Button
+        android:id="@+id/searchJobCardButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Search job cards" />
+
+    <Button
+        android:id="@+id/manualPlateButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Enter plate manually" />
+
+    <TextView
+        android:id="@+id/selectedJobCardText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="No job card / plate selected"
+        android:layout_marginTop="8dp" />
+
+    <Button
+        android:id="@+id/clearSelectionButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Clear job card"
+        android:visibility="gone" />
+
+    <Button
+        android:id="@+id/proceedButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Proceed to capture"
+        android:enabled="false"
+        android:layout_marginTop="16dp" />
+
+</LinearLayout>

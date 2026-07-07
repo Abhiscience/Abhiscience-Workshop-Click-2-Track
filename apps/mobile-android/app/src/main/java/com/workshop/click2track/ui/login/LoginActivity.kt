@@ -41,7 +41,7 @@ class LoginActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val prefs = withContext(Dispatchers.IO) { db.userPrefsDao().getUserPreferences() }
             if (prefs?.access_token?.isNotBlank() == true) {
-                openCaptureScreen()
+                openStageSelection()
                 return@launch
             }
         }
@@ -91,9 +91,10 @@ class LoginActivity : AppCompatActivity() {
 
     private fun saveSessionAndProceed(body: LoginResponse) {
         lifecycleScope.launch(Dispatchers.IO) {
+            // Fetch minimal user info from the token; profile details can be backfilled later.
             val prefs = UserPreferences(
                 user_id = body.user_id,
-                name = "", // Will be populated later from a profile endpoint if needed
+                name = "",
                 mobile = binding.mobileEditText.text.toString().trim(),
                 role_id = body.role_id,
                 branch_id = null,
@@ -104,13 +105,13 @@ class LoginActivity : AppCompatActivity() {
             db.userPrefsDao().insert(prefs)
 
             withContext(Dispatchers.Main) {
-                openCaptureScreen()
+                openStageSelection()
             }
         }
     }
 
-    private fun openCaptureScreen() {
-        startActivity(Intent(this, CaptureActivity::class.java))
+    private fun openStageSelection() {
+        startActivity(Intent(this, com.workshop.click2track.ui.stage.StageSelectionActivity::class.java))
         finish()
     }
 

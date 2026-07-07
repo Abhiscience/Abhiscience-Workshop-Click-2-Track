@@ -14,8 +14,10 @@ data class PendingCapture(
     val plate_text: String?,
     val confidence: Float?,
     val remarks: String?,
+    val geo_lat: Double?,
+    val geo_lng: Double?,
     val created_at: Date,
-    val sync_status: String = "PENDING",  // PENDING, SYNCING, SYNCED, FAILED
+    val sync_status: String = "PENDING",
     val retry_count: Int = 0
 )
 
