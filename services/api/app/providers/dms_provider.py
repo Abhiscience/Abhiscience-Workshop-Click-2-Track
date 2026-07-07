@@ -14,6 +14,29 @@ from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any
 
 
+class DMSBillingInfo:
+    """Lightweight, old-compatible reconciliation result returned by providers.
+
+    This is intentionally a simple class (not a Pydantic model) so it can be used
+    with attribute access `billing.dms_status` / `billing.bill_amount` from the
+    reconcile-dms endpoint without adding a heavy import graph.
+    """
+
+    def __init__(
+        self,
+        dms_status: str,  # BILLED, ZERO_BILLED, CANCELLED, NOT_FOUND, ERROR
+        bill_amount: float,
+        currency: str = "INR",
+        summary: Optional[Dict[str, Any]] = None,
+        error: Optional[str] = None,
+    ):
+        self.dms_status = dms_status
+        self.bill_amount = bill_amount
+        self.currency = currency
+        self.summary = summary or {}
+        self.error = error
+
+
 class DMSProvider(ABC):
     """Abstract base class for Dealer Management System providers."""
 
@@ -46,6 +69,19 @@ class DMSProvider(ABC):
         pass
 
     @abstractmethod
+    async def lookup_billing_info(self, external_job_card_no: str) -> DMSBillingInfo:
+        """Return the legacy reconciliation billing info for a job card.
+
+        This method supports the reconcile-dms endpoint. The mock provider uses
+        the suffix convention `-Z` (zero-billed) and `-C` (cancelled) so QA can
+        simulate both DMS outcomes without a real DMS connection.
+
+        Real providers should derive dms_status and bill_amount from their own
+        financial/ro data and return a `DMSBillingInfo` object.
+        """
+        pass
+
+    @abstractmethod
     def get_provider_name(self) -> str:
         pass
 
@@ -56,6 +92,11 @@ class MockDMSProvider(DMSProvider):
     Returns plausible placeholder figures so the dashboard can visualise the
     shape of the data without a live DMS connection. All values are clearly
     labeled with "mock" in the provider field.
+
+    Reconciliation test convention:
+        - job card numbers ending in -Z => DMS_BILLING(BILLED, 0.0)   => ZERO_BILLED
+        - job card numbers ending in -C => DMS_BILLING(CANCELLED, 0.0) => CANCELLED
+        - everything else             => DMS_BILLING(BILLED, nonzero)
     """
 
     def __init__(self, seed: int = 1):
@@ -88,6 +129,35 @@ class MockDMSProvider(DMSProvider):
             "invoice_date": None,
             "error": None,
         }
+
+    async def lookup_billing_info(self, external_job_card_no: str) -> DMSBillingInfo:
+        if external_job_card_no.upper().endswith("-Z"):
+            summary = await self.get_job_financial_summary(external_job_card_no=external_job_card_no)
+            summary["invoice_amount"] = 0.0
+            summary["profit_amount"] = 0.0
+            return DMSBillingInfo(
+                dms_status="BILLED",
+                bill_amount=0.0,
+                currency=summary.get("currency", "INR"),
+                summary=summary,
+            )
+        if external_job_card_no.upper().endswith("-C"):
+            summary = await self.get_job_financial_summary(external_job_card_no=external_job_card_no)
+            return DMSBillingInfo(
+                dms_status="CANCELLED",
+                bill_amount=0.0,
+                currency=summary.get("currency", "INR"),
+                summary=summary,
+            )
+
+        # Any non-test number is treated as a normal bill.
+        summary = await self.get_job_financial_summary(external_job_card_no=external_job_card_no)
+        return DMSBillingInfo(
+            dms_status="BILLED",
+            bill_amount=summary.get("invoice_amount") or 0.0,
+            currency=summary.get("currency", "INR"),
+            summary=summary,
+        )
 
     def get_provider_name(self) -> str:
         return "mock"
@@ -125,6 +195,14 @@ class ReynoldsDMSProvider(DMSProvider):
             "invoice_date": None,
             "error": "Reynolds DMS integration not yet implemented.",
         }
+
+    async def lookup_billing_info(self, external_job_card_no: str) -> DMSBillingInfo:
+        # Future real provider: implement DMS-specific mapping here.
+        return DMSBillingInfo(
+            dms_status="NOT_FOUND",
+            bill_amount=0.0,
+            error="Reynolds DMS billing lookup not yet implemented.",
+        )
 
     def get_provider_name(self) -> str:
         return "reynolds"
