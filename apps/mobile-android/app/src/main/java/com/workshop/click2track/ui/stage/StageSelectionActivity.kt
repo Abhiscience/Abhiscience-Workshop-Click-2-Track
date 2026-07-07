@@ -78,7 +78,8 @@ class StageSelectionActivity : AppCompatActivity() {
                 val response = apiService.listWorkflowStages("Bearer $token", branchId)
                 withContext(Dispatchers.Main) {
                     if (response.isSuccessful && response.body() != null) {
-                        renderStages(response.body()!!.stages, prefs)
+                        currentStages = response.body()!!.stages
+                        renderStages(currentStages, prefs)
                     } else {
                         Toast.makeText(this@StageSelectionActivity, "Could not load stages", Toast.LENGTH_SHORT).show()
                     }
