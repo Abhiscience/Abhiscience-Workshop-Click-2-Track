@@ -298,6 +298,26 @@ class StaffTarget(Base):
     user = relationship("User", foreign_keys=[user_id])
 
 
+class CommissionRule(Base):
+    """Commission / incentive rule that applies to a specific user or an entire role."""
+    __tablename__ = "commission_rules"
+
+    rule_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.user_id"), nullable=True)
+    role_id = Column(Integer, ForeignKey("roles.role_id"), nullable=True)
+    branch_id = Column(Integer, ForeignKey("branches.branch_id"), nullable=True)
+    rule_type = Column(String(50), nullable=False)  # PERCENT_OF_REVENUE / FLAT_PER_VEHICLE / FLAT_BONUS_ON_TARGET_MET
+    rule_value = Column(Float, nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_by_user_id = Column(Integer, ForeignKey("users.user_id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User", foreign_keys=[user_id])
+    role = relationship("Role")
+    created_by = relationship("User", foreign_keys=[created_by_user_id])
+
+
 class DemoRevenueEntry(Base):
     """Part F demo mode only: sample revenue figures. Must never be mistaken for real DMS revenue."""
     __tablename__ = "demo_revenue_entries"

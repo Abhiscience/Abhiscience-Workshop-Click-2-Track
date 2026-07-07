@@ -17,11 +17,12 @@ from app.schemas.schemas_partf import (
     VehicleFlowResponse, StaffPerformanceResponse, StaffUtilizationRow,
     PartsShortagePatterns, ReworkRateReport, AIActionPlanResponse, VehicleFlowAtRiskAlert,
     TeamTargetsDashboard, StaffTargetUpsert, UserShiftCreate, DemoRevenueEntryCreate,
+    CommissionRuleCreate, CommissionRule as CommissionRuleSchema, CommissionProjection, CommissionRuleType,
 )
 from app.models.models import (
     Branch, CaptureEvent, JobCard, JobCategory, CancellationCategory, Role, User, Vehicle, WorkflowStage,
     OverrideRequest, OverrideRequestStatus, AppInstallation, FlatRateTimeCatalog, JobCardJobType,
-    UserShift, StaffTarget, DemoRevenueEntry, Complaint, ComplaintStatus,
+    UserShift, StaffTarget, DemoRevenueEntry, Complaint, ComplaintStatus, CommissionRule,
 )
 from app.schemas.schemas import (
     OverrideRequestCreate, OverrideRequestResponse, CancellationCategoryCreate,
@@ -1443,3 +1444,214 @@ async def update_complaint_status(
     await db.commit()
     await db.refresh(complaint)
     return complaint
+
+
+# ---------------------------------------------------------------------------
+# Commission / incentive rules endpoints.
+# ---------------------------------------------------------------------------
+@router.post("/commission-rules", response_model=CommissionRuleSchema, status_code=201)
+async def create_commission_rule(
+    data: CommissionRuleCreate,
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a commission/incentive rule for a user or a role."""
+    await _require_admin_role(admin["user_id"], db)
+
+    if (data.user_id is None and data.role_id is None) or (data.user_id is not None and data.role_id is not None):
+        raise HTTPException(
+            status_code=400,
+            detail="Provide exactly one of user_id or role_id",
+        )
+
+    if data.user_id is not None:
+        user = await db.execute(select(User).where(User.user_id == data.user_id))
+        if not user.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="User not found")
+
+    if data.role_id is not None:
+        role = await db.execute(select(Role).where(Role.role_id == data.role_id))
+        if not role.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Role not found")
+
+    rule = CommissionRule(
+        user_id=data.user_id,
+        role_id=data.role_id,
+        branch_id=data.branch_id,
+        rule_type=data.rule_type.value,
+        rule_value=data.rule_value,
+        is_active=data.is_active,
+        created_by_user_id=admin["user_id"],
+    )
+    db.add(rule)
+    await db.commit()
+    await db.refresh(rule)
+    return rule
+
+
+@router.get("/commission-rules", response_model=List[CommissionRuleSchema])
+async def list_commission_rules(
+    user_id: Optional[int] = None,
+    role_id: Optional[int] = None,
+    branch_id: Optional[int] = None,
+    active_only: bool = True,
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List commission/incentive rules with optional filters."""
+    await _require_admin_role(admin["user_id"], db)
+
+    stmt = select(CommissionRule)
+    if active_only:
+        stmt = stmt.where(CommissionRule.is_active == True)
+    if user_id is not None:
+        stmt = stmt.where(CommissionRule.user_id == user_id)
+    if role_id is not None:
+        stmt = stmt.where(CommissionRule.role_id == role_id)
+    if branch_id is not None:
+        stmt = stmt.where(CommissionRule.branch_id == branch_id)
+    stmt = stmt.order_by(CommissionRule.created_at.desc())
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
+@router.post("/commission-rules/{rule_id}/deactivate", response_model=CommissionRuleSchema)
+async def deactivate_commission_rule(
+    rule_id: int,
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Soft-deactivate a commission rule (don't delete, keep audit trail)."""
+    await _require_admin_role(admin["user_id"], db)
+
+    result = await db.execute(select(CommissionRule).where(CommissionRule.rule_id == rule_id))
+    rule = result.scalar_one_or_none()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Commission rule not found")
+
+    rule.is_active = False
+    rule.updated_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(rule)
+    return rule
+
+
+@router.get("/commission-projection", response_model=CommissionProjection)
+async def commission_projection(
+    user_id: int,
+    year: int,
+    month: int,
+    admin: dict = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Project commission for a user in a given month.
+
+    PERCENT_OF_REVENUE requires a live DMS connection and is reported as pending
+    until one exists. Other rule types use real vehicle-handle counts and targets
+    that already work today.
+
+    Caller-visible disclaimer: this is a management projection, not a payroll figure.
+    """
+    await _require_admin_role(admin["user_id"], db)
+
+    user = await db.execute(
+        select(User).options(joinedload(User.role)).where(User.user_id == user_id)
+    )
+    user = user.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Resolve applicable rule: user-specific rule wins over role rule.
+    rule = None
+    user_rule = await db.execute(
+        select(CommissionRule)
+        .where(CommissionRule.user_id == user_id)
+        .where(CommissionRule.is_active == True)
+        .order_by(CommissionRule.created_at.desc())
+    )
+    rule = user_rule.scalar_one_or_none()
+
+    applied_to_user = True
+    if rule is None and user.role_id is not None:
+        role_rule = await db.execute(
+            select(CommissionRule)
+            .where(CommissionRule.role_id == user.role_id)
+            .where(CommissionRule.is_active == True)
+            .order_by(CommissionRule.created_at.desc())
+        )
+        rule = role_rule.scalar_one_or_none()
+        applied_to_user = False
+
+    if rule is None:
+        return CommissionProjection(
+            user_id=user_id,
+            year=year,
+            month=month,
+            rule_type=CommissionRuleType.FLAT_PER_VEHICLE,
+            rule_value=0.0,
+            vehicles_handled_actual=0,
+            monthly_vehicle_target=None,
+            revenue_amount=None,
+            projected_commission=0.0,
+            applied_rule_id=None,
+            applied_to_user=False,
+            applied_to_role=False,
+        )
+
+    # vehicles_handled_actual: count of captures by this user in the month.
+    start_dt = datetime(year, month, 1)
+    end_dt = datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
+
+    vehicles_stmt = (
+        select(func.count(func.distinct(CaptureEvent.job_card_id)))
+        .where(CaptureEvent.user_id == user_id)
+        .where(CaptureEvent.received_at_server >= start_dt)
+        .where(CaptureEvent.received_at_server < end_dt)
+        .where(CaptureEvent.voided == False)
+    )
+    vehicles_result = await db.execute(vehicles_stmt)
+    vehicles_handled = vehicles_result.scalar() or 0
+
+    # Monthly vehicle target if set.
+    target_stmt = (
+        select(StaffTarget)
+        .where(StaffTarget.user_id == user_id)
+        .where(StaffTarget.target_year == year)
+        .where(StaffTarget.target_month == month)
+    )
+    target_result = await db.execute(target_stmt)
+    target = target_result.scalar_one_or_none()
+    monthly_vehicle_target = target.vehicle_target_count if target else None
+
+    rule_type_enum = CommissionRuleType(rule.rule_type)
+    projected = None
+    revenue_amount = None
+    revenue_pending = False
+
+    if rule_type_enum == CommissionRuleType.FLAT_PER_VEHICLE:
+        projected = rule.rule_value * vehicles_handled
+    elif rule_type_enum == CommissionRuleType.FLAT_BONUS_ON_TARGET_MET:
+        if monthly_vehicle_target is not None and vehicles_handled >= monthly_vehicle_target:
+            projected = rule.rule_value
+        else:
+            projected = 0.0
+    elif rule_type_enum == CommissionRuleType.PERCENT_OF_REVENUE:
+        revenue_amount = None
+        projected = None
+        revenue_pending = True
+
+    return CommissionProjection(
+        user_id=user_id,
+        year=year,
+        month=month,
+        rule_type=rule_type_enum,
+        rule_value=rule.rule_value,
+        vehicles_handled_actual=vehicles_handled,
+        monthly_vehicle_target=monthly_vehicle_target,
+        revenue_amount=revenue_amount,
+        projected_commission=projected,
+        revenue_pending_dms_connection=revenue_pending,
+        applied_rule_id=rule.rule_id,
+        applied_to_user=applied_to_user,
+        applied_to_role=not applied_to_user,
+    )

@@ -20,7 +20,8 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         
         // Emulator test mode flag
-        buildConfigField "boolean", "EMUlATOR_TEST_MODE", "false"
+        buildConfigField "boolean", "EMULATOR_TEST_MODE", "false"
+        buildConfigField "String", "BASE_URL", '"https://api.example.com/"'
     }
 
     buildTypes {
@@ -30,6 +31,7 @@ android {
         }
         debug {
             buildConfigField "boolean", "EMULATOR_TEST_MODE", "true"
+            buildConfigField "String", "BASE_URL", '"https://api-staging.example.com/"'
         }
     }
     

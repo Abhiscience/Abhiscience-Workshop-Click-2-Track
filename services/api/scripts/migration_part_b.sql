@@ -209,3 +209,28 @@ CREATE INDEX IF NOT EXISTS idx_complaints_job_card
     ON complaints(job_card_id);
 CREATE INDEX IF NOT EXISTS idx_complaints_status
     ON complaints(status);
+
+-- Commission / incentive rules (new task)
+CREATE TABLE IF NOT EXISTS commission_rules (
+    rule_id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
+    role_id INTEGER REFERENCES roles(role_id) ON DELETE CASCADE,
+    branch_id INTEGER REFERENCES branches(branch_id) ON DELETE SET NULL,
+    rule_type VARCHAR(50) NOT NULL,
+    rule_value NUMERIC(12,4) NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_by_user_id INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+    CONSTRAINT user_or_role_check CHECK (
+        (user_id IS NOT NULL AND role_id IS NULL) OR
+        (user_id IS NULL AND role_id IS NOT NULL)
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_commission_rules_user
+    ON commission_rules(user_id);
+CREATE INDEX IF NOT EXISTS idx_commission_rules_role
+    ON commission_rules(role_id);
+CREATE INDEX IF NOT EXISTS idx_commission_rules_branch
+    ON commission_rules(branch_id);

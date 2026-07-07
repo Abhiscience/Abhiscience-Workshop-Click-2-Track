@@ -1,5 +1,6 @@
 """Part F reporting & staff feature schemas."""
-from datetime import date, time
+from datetime import date, time, datetime
+from enum import Enum
 from typing import List, Optional
 
 from pydantic import BaseModel
@@ -180,4 +181,52 @@ class DemoRevenueEntryCreate(BaseModel):
     revenue_amount: float
     revenue_currency: Optional[str] = "INR"
     revenue_date: date
+
+
+# Commission / incentive schemas (new task)
+class CommissionRuleType(str, Enum):
+    PERCENT_OF_REVENUE = "PERCENT_OF_REVENUE"
+    FLAT_PER_VEHICLE = "FLAT_PER_VEHICLE"
+    FLAT_BONUS_ON_TARGET_MET = "FLAT_BONUS_ON_TARGET_MET"
+
+
+class CommissionRuleBase(BaseModel):
+    user_id: Optional[int] = None
+    role_id: Optional[int] = None
+    branch_id: Optional[int] = None
+    rule_type: CommissionRuleType
+    rule_value: float
+    is_active: bool = True
+
+
+class CommissionRuleCreate(CommissionRuleBase):
+    pass
+
+
+class CommissionRule(CommissionRuleBase):
+    rule_id: int
+    created_by_user_id: Optional[int]
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+
+class CommissionProjection(BaseModel):
+    user_id: int
+    year: int
+    month: int
+    rule_type: CommissionRuleType
+    rule_value: float
+    vehicles_handled_actual: int
+    monthly_vehicle_target: Optional[int]
+    revenue_amount: Optional[float]
+    projected_commission: Optional[float]
+    currency: str = "INR"
+    revenue_pending_dms_connection: bool = False
+    disclaimer: str = "Management projection only — not an official payroll figure."
+    applied_rule_id: Optional[int]
+    applied_to_user: bool
+    applied_to_role: bool
 

@@ -7,7 +7,9 @@ import java.util.*
 @Entity(tableName = "pending_captures")
 data class PendingCapture(
     @PrimaryKey val event_id: String,
-    val stage_id: String,
+    val stage_id: Int,
+    val job_card_id: Int?,
+    val vehicle_id: Int?,
     val image_uri: String?,
     val plate_text: String?,
     val confidence: Float?,
@@ -19,12 +21,13 @@ data class PendingCapture(
 
 @Entity(tableName = "user_prefs")
 data class UserPreferences(
-    @PrimaryKey val user_id: String,
+    @PrimaryKey val user_id: Int,
     val name: String,
     val mobile: String,
-    val role_id: String,
-    val branch_id: String,
-    val installation_id: String,
+    val role_id: Int,
+    val branch_id: Int?,
+    val installation_id: String?,
+    val access_token: String?,
     val last_sync: Date?
 )
 
@@ -32,13 +35,16 @@ data class UserPreferences(
 interface PendingCaptureDao {
     @Query("SELECT * FROM pending_captures WHERE sync_status = 'PENDING'")
     suspend fun getPendingCaptures(): List<PendingCapture>
-    
+
+    @Query("SELECT * FROM pending_captures WHERE sync_status = 'FAILED' AND retry_count < 5 ORDER BY created_at ASC")
+    suspend fun getFailedCapturesForRetry(): List<PendingCapture>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(capture: PendingCapture)
-    
+
     @Update
     suspend fun update(capture: PendingCapture)
-    
+
     @Query("DELETE FROM pending_captures WHERE sync_status = 'SYNCED'")
     suspend fun deleteSynced()
 }
@@ -54,12 +60,29 @@ interface UserPrefsDao {
 
 @Database(
     entities = [PendingCapture::class, UserPreferences::class],
-    version = 1
+    version = 2
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun pendingCaptureDao(): PendingCaptureDao
     abstract fun userPrefsDao(): UserPrefsDao
+
+    companion object {
+        @Volatile
+        private var INSTANCE: AppDatabase? = null
+
+        fun getDatabase(context: android.content.Context): AppDatabase {
+            return INSTANCE ?: synchronized(this) {
+                val instance = Room.databaseBuilder(
+                    context.applicationContext,
+                    AppDatabase::class.java,
+                    "click2track_database"
+                ).fallbackToDestructiveMigration().build()
+                INSTANCE = instance
+                instance
+            }
+        }
+    }
 }
 
 class Converters {
